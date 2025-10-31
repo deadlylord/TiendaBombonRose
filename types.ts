@@ -1,5 +1,3 @@
-
-
 export interface ProductVariantDetail {
   available: boolean;
 }
@@ -86,3 +84,10 @@ export type ToastMessage = {
   message: string;
   type: 'success' | 'error';
 };
+
+export interface User {
+  uid: string;
+  email: string | null;
+  role: 'admin' | 'vendedor';
+  docId: string;
+}

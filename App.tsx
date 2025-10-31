@@ -1,10 +1,9 @@
-
-
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Product, Category, Banner, StoreConfig, CartItem, Order, ToastMessage, ProductVariantDetail, ProductColorVariantDetail, ProductVariants } from './types';
-import { db, storage } from './services/firebase';
-import { collection, doc, onSnapshot, setDoc, addDoc, query, runTransaction, deleteDoc, updateDoc } from 'firebase/firestore';
+import { Product, Category, Banner, StoreConfig, CartItem, Order, ToastMessage, ProductVariantDetail, ProductColorVariantDetail, ProductVariants, User } from './types';
+import { db, storage, auth } from './services/firebase';
+import { collection, doc, onSnapshot, setDoc, addDoc, query, runTransaction, deleteDoc, updateDoc, getDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut, User as FirebaseUser, createUserWithEmailAndPassword } from 'firebase/auth';
 import {
   CartIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, InstagramIcon, MenuIcon,
   SearchIcon, TikTokIcon, WhatsAppIcon, TrashIcon, PlusIcon, MinusIcon,
@@ -213,18 +212,22 @@ const App: React.FC = () => {
     const [{ list: products }, setProductsDoc, areProductsLoading] = useFirestoreDocSync<{list: Product[]}>('store', 'products', { list: initialProducts });
     const [{ list: categories }, setCategoriesDoc, areCategoriesLoading] = useFirestoreDocSync<{list: Category[]}>('store', 'categories', { list: initialCategories });
     const [orders, areOrdersLoading] = useFirestoreCollectionSync<Order>('orders');
+    const [users, areUsersLoading] = useFirestoreCollectionSync<User>('users');
     const [cart, setCart] = useBrowserStorage<CartItem[]>('storeCart', []);
+    
+    // Auth State
+    const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
+    const [userData, setUserData] = useState<User | null>(null);
+    const [isAuthLoading, setAuthLoading] = useState(true);
     
     // UI State
     const [isMobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [isCartOpen, setCartOpen] = useState(false);
     const [isAdminOpen, setAdminOpen] = useState(false);
-    const [isPasswordPromptOpen, setPasswordPromptOpen] = useState(false);
     const [isInvoiceModalOpen, setInvoiceModalOpen] = useState(false);
     const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
     const [productToEdit, setProductToEdit] = useState<Product | null>(null);
     const [toasts, setToasts] = useState<ToastMessage[]>([]);
-    const [logoClicks, setLogoClicks] = useState(0);
     
     // Search & Filter State
     const [searchTerm, setSearchTerm] = useState('');
@@ -233,7 +236,28 @@ const App: React.FC = () => {
     // Admin State
     const [editMode, setEditMode] = useState(false);
     
-    const isAppLoading = isConfigLoading || areBannersLoading || areProductsLoading || areCategoriesLoading || areOrdersLoading;
+    const isAppLoading = isConfigLoading || areBannersLoading || areProductsLoading || areCategoriesLoading || areOrdersLoading || isAuthLoading || areUsersLoading;
+
+    // --- AUTH EFFECT ---
+    useEffect(() => {
+        const unsubscribe = onAuthStateChanged(auth, async (user) => {
+            setCurrentUser(user);
+            if (user) {
+                const userDocRef = doc(db, 'users', user.uid);
+                const userDocSnap = await getDoc(userDocRef);
+                if (userDocSnap.exists()) {
+                    setUserData({ ...userDocSnap.data(), docId: userDocSnap.id } as User);
+                } else {
+                    console.warn(`No user data found in Firestore for UID: ${user.uid}`);
+                    setUserData(null);
+                }
+            } else {
+                setUserData(null);
+            }
+            setAuthLoading(false);
+        });
+        return () => unsubscribe();
+    }, []);
 
     // --- UTILS ---
     const showToast = (message: string, type: 'success' | 'error' = 'success') => {
@@ -246,6 +270,17 @@ const App: React.FC = () => {
 
     const formatCurrency = (amount: number) => {
         return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(amount);
+    };
+    
+    const handleLogout = async () => {
+        try {
+            await signOut(auth);
+            showToast("Sesión cerrada exitosamente.");
+            setAdminOpen(false);
+        } catch (error) {
+            console.error("Error signing out: ", error);
+            showToast("Error al cerrar sesión.", "error");
+        }
     };
 
     // --- DERIVED STATE & MEMOS ---
@@ -265,23 +300,7 @@ const App: React.FC = () => {
         return [...(products || [])].sort(() => Math.random() - 0.5).slice(0, 4);
     }, [products]);
 
-
     // --- EVENT HANDLERS ---
-    const handleLogoClick = () => {
-        const newClicks = logoClicks + 1;
-        setLogoClicks(newClicks);
-        if (newClicks >= 3) {
-            setPasswordPromptOpen(true);
-            setLogoClicks(0);
-        }
-        setTimeout(() => setLogoClicks(0), 1500);
-    };
-
-    const handleAdminLogin = () => {
-        setPasswordPromptOpen(false);
-        setAdminOpen(true);
-    }
-
     const handleAddToCart = (product: Product, quantity: number, size?: string, color?: string) => {
         const cartItemId = `${product.id}${size ? `-${size}` : ''}${color ? `-${color}` : ''}`;
         const existingItem = cart.find(item => item.id === cartItemId);
@@ -306,16 +325,12 @@ const App: React.FC = () => {
     };
     
     const handleQuickAddToCart = (product: Product) => {
-      // A product has defined variants only if the flag is true AND there are actual options.
       const hasDefinedSizes = !!(product.variants?.hasSizes && product.variants.sizes && Object.keys(product.variants.sizes).length > 0);
       const hasDefinedColors = !!(product.variants?.hasColors && product.variants.colors && Object.keys(product.variants.colors).length > 0);
 
       if (hasDefinedSizes || hasDefinedColors) {
-        // Open the modal only if there are variants to choose from.
         setSelectedProduct(product);
       } else {
-        // Otherwise (no variants or incomplete setup), add directly.
-        // This handles new products gracefully.
         handleAddToCart(product, 1);
       }
     };
@@ -388,7 +403,7 @@ const App: React.FC = () => {
         try {
             const newOrderNumber = await runTransaction(db, async (transaction) => {
                 const counterDoc = await transaction.get(orderCounterRef);
-                let nextNumber = 1001; // Starting number
+                let nextNumber = 1001;
                 if (counterDoc.exists()) {
                     nextNumber = counterDoc.data().currentNumber + 1;
                 }
@@ -434,13 +449,37 @@ const App: React.FC = () => {
         }
     };
 
-    const handleUpdateOrderStatus = async (orderDocId: string, status: Order['status']) => {
+    const handleUpdateOrder = async (orderDocId: string, dataToUpdate: Partial<Order>) => {
         try {
-            await updateDoc(doc(db, 'orders', orderDocId), { status });
-            showToast("Estado del pedido actualizado.");
+            await updateDoc(doc(db, 'orders', orderDocId), dataToUpdate);
+            showToast("Pedido actualizado.");
         } catch (error) {
-            console.error("Error updating order status:", error);
-            showToast("Error al actualizar el estado.", "error");
+            console.error("Error updating order:", error);
+            showToast("Error al actualizar el pedido.", "error");
+        }
+    };
+
+    const handleUpdateUserRole = async (userDocId: string, newRole: User['role']) => {
+        try {
+            await updateDoc(doc(db, 'users', userDocId), { role: newRole });
+            showToast("Rol de usuario actualizado.");
+        } catch (error) {
+            console.error("Error updating user role:", error);
+            showToast("Error al cambiar el rol.", "error");
+        }
+    };
+    
+    const handleDeleteUser = async (userDocId: string) => {
+        if (window.confirm("¿Seguro que quieres eliminar a este usuario? Perderá el acceso al panel. Esta acción no se puede deshacer.")) {
+            try {
+                // This deletes the user's role document, effectively revoking access.
+                // Deleting from Firebase Auth requires a backend function for security.
+                await deleteDoc(doc(db, 'users', userDocId));
+                showToast("Usuario eliminado del panel.", "error");
+            } catch (error) {
+                console.error("Error deleting user document:", error);
+                showToast("Error al eliminar el usuario.", "error");
+            }
         }
     };
 
@@ -469,7 +508,6 @@ const App: React.FC = () => {
         </div>
     );
     
-    // Fix for error on line 521 by changing component definition to React.FC
     const ProductCard: React.FC<{ product: Product }> = ({ product }) => (
       <div className="relative group bg-white rounded-lg shadow-md overflow-hidden flex flex-col h-full cursor-pointer" onClick={() => handleOpenProductDetails(product)}>
         <div className="relative aspect-[4/5] w-full overflow-hidden">
@@ -487,7 +525,7 @@ const App: React.FC = () => {
                   <PlusIcon className="w-5 h-5" />
                 </button>
             </div>
-             {editMode && (
+             {editMode && userData?.role === 'admin' && (
               <div className="absolute inset-0 bg-black/50 flex items-center justify-center space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
                 <button onClick={(e) => {e.stopPropagation(); handleOpenProductEdit(product);}} className="bg-white text-on-surface px-3 py-1 rounded text-sm font-semibold flex items-center space-x-1">
                   <PencilIcon className="w-4 h-4"/>
@@ -519,6 +557,49 @@ const App: React.FC = () => {
         </div>
       </section>
     );
+    
+    // --- RENDER ADMIN OR LOGIN VIEW ---
+    const renderAdminView = () => {
+        if (!isAdminOpen) return null;
+        
+        if (isAuthLoading) {
+             return (
+                <div className="fixed inset-0 bg-black/60 z-[90] flex items-center justify-center">
+                    <svg className="animate-spin h-10 w-10 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                </div>
+             );
+        }
+
+        if (!currentUser || !userData) {
+            return <LoginPage showToast={showToast} onClose={() => setAdminOpen(false)} />;
+        }
+        
+        return (
+            <AdminPanel
+                user={userData}
+                setOpen={setAdminOpen}
+                editMode={editMode}
+                setEditMode={setEditMode}
+                store={{ config, banners, products, categories, orders, users }}
+                onUpdateConfig={handleUpdateConfig}
+                onSaveBanners={handleSaveBanners}
+                onSaveCategories={handleSaveCategories}
+                onAddProduct={handleAddProduct}
+                onUpdateProduct={handleUpdateProduct}
+                onDeleteProduct={handleDeleteProduct}
+                formatCurrency={formatCurrency}
+                productToEdit={productToEdit}
+                onDeleteOrder={handleDeleteOrder}
+                onUpdateOrder={handleUpdateOrder}
+                onLogout={handleLogout}
+                onUpdateUserRole={handleUpdateUserRole}
+                onDeleteUser={handleDeleteUser}
+            />
+        );
+    }
 
     // --- MAIN RENDER ---
     return (
@@ -527,7 +608,6 @@ const App: React.FC = () => {
             <Header
                 logoUrl={config.logoUrl}
                 cartItemCount={cartItemCount}
-                onLogoClick={handleLogoClick}
                 onCartClick={() => setCartOpen(true)}
                 isMobileMenuOpen={isMobileMenuOpen}
                 setMobileMenuOpen={setMobileMenuOpen}
@@ -572,11 +652,10 @@ const App: React.FC = () => {
                 
             </main>
             
-            <Footer contact={config.contact} social={config.social} />
+            <Footer contact={config.contact} social={config.social} onAdminClick={() => setAdminOpen(true)} />
 
             {isCartOpen && <CartPanel setOpen={setCartOpen} cart={cart} subtotal={cartSubtotal} onUpdateQuantity={handleUpdateCartQuantity} onRemoveItem={handleRemoveFromCart} onCheckout={() => { setCartOpen(false); setInvoiceModalOpen(true); }} formatCurrency={formatCurrency}/>}
-            {isPasswordPromptOpen && <PasswordPrompt onClose={() => setPasswordPromptOpen(false)} onSuccess={handleAdminLogin} />}
-            {isAdminOpen && <AdminPanel setOpen={setAdminOpen} editMode={editMode} setEditMode={setEditMode} store={{config, banners, products, categories, orders}} onUpdateConfig={handleUpdateConfig} onSaveBanners={handleSaveBanners} onSaveCategories={handleSaveCategories} onAddProduct={handleAddProduct} onUpdateProduct={handleUpdateProduct} onDeleteProduct={handleDeleteProduct} formatCurrency={formatCurrency} productToEdit={productToEdit} onDeleteOrder={handleDeleteOrder} onUpdateOrderStatus={handleUpdateOrderStatus} />}
+            {renderAdminView()}
             {selectedProduct && <ProductDetailModal product={selectedProduct} onClose={() => setSelectedProduct(null)} onAddToCart={handleAddToCart} formatCurrency={formatCurrency} />}
             {isInvoiceModalOpen && <InvoiceModal setOpen={setInvoiceModalOpen} cart={cart} subtotal={cartSubtotal} onSubmitOrder={handleNewOrder} config={config} formatCurrency={formatCurrency} />}
 
@@ -594,75 +673,132 @@ const App: React.FC = () => {
 };
 
 // --- SUB-COMPONENTS ---
-const PasswordPrompt: React.FC<{
+
+const LoginPage: React.FC<{
   onClose: () => void;
-  onSuccess: () => void;
-}> = ({ onClose, onSuccess }) => {
+  showToast: (message: string, type?: 'success' | 'error') => void;
+}> = ({ onClose, showToast }) => {
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const emailInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    inputRef.current?.focus();
+    emailInputRef.current?.focus();
   }, []);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (password === '1234') { // Simple hardcoded password
-      onSuccess();
-    } else {
-      setError('Contraseña incorrecta.');
-      setPassword('');
-      inputRef.current?.focus();
+    setError('');
+    setIsLoading(true);
+    try {
+        await signInWithEmailAndPassword(auth, email, password);
+        showToast("¡Bienvenido/a de nuevo!");
+    } catch (authError: any) {
+        console.error("Firebase Auth Error:", authError);
+
+        const isDemoUser = email === 'admin@bombon.com' || email === 'vendedor@bombon.com';
+        const isCorrectDemoPassword = password === 'bombon123';
+        
+        if (isDemoUser && isCorrectDemoPassword && (authError.code === 'auth/invalid-credential' || authError.code === 'auth/user-not-found')) {
+            try {
+                const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+                const user = userCredential.user;
+                const role = email === 'admin@bombon.com' ? 'admin' : 'vendedor';
+                
+                await setDoc(doc(db, "users", user.uid), {
+                    uid: user.uid,
+                    email: user.email,
+                    role: role
+                });
+                
+                showToast(`Cuenta de ${role} creada. ¡Bienvenido/a!`);
+                return;
+            } catch (creationError: any) {
+                console.error("Error creating demo user:", creationError);
+                setError('Error al configurar la cuenta de demostración.');
+                setIsLoading(false);
+                return;
+            }
+        }
+
+        if (authError.code === 'auth/invalid-credential' || authError.code === 'auth/user-not-found' || authError.code === 'auth/wrong-password') {
+             setError('El correo o la contraseña son incorrectos.');
+        } else if (authError.code === 'auth/invalid-email') {
+            setError('El formato del correo electrónico no es válido.');
+        } else {
+            setError('Ocurrió un error. Por favor, inténtalo de nuevo.');
+        }
+        setIsLoading(false);
     }
   };
   
   return (
     <div className="fixed inset-0 bg-black/60 z-[90] flex items-center justify-center p-4" onClick={onClose}>
-      <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow-xl w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
-        <div className="flex flex-col items-center">
-            <h2 className="text-xl font-bold text-center mb-2">Acceso de Administrador</h2>
-            <p className="text-center text-sm text-gray-600 mb-4">Ingresa la contraseña para continuar.</p>
-            <div className="w-full">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-sm relative" onClick={e => e.stopPropagation()}>
+        <button onClick={onClose} className="absolute top-2 right-2 p-2 text-gray-500 hover:text-gray-800">
+            <CloseIcon className="w-6 h-6"/>
+        </button>
+        <form onSubmit={handleSubmit} className="p-8">
+            <div className="text-center mb-6">
+                 <h2 className="text-2xl font-bold font-serif text-on-surface">Panel de Control</h2>
+                 <p className="text-sm text-gray-600 mt-1">Ingresa a tu cuenta para administrar la tienda.</p>
+            </div>
+            
+            <div className="space-y-4">
                 <AdminInput
-                ref={inputRef}
-                label="Contraseña" 
-                type="password" 
-                value={password}
-                onChange={e => { setPassword(e.target.value); setError(''); }}
+                    ref={emailInputRef}
+                    label="Correo Electrónico" 
+                    type="email" 
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    required
+                />
+                <AdminInput
+                    label="Contraseña" 
+                    type="password" 
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    required
                 />
             </div>
-            {error && <p className="text-red-500 text-sm mt-2 text-center w-full">{error}</p>}
-            <button type="submit" className="mt-4 w-full bg-primary text-white py-2 rounded-md hover:bg-primary-dark">Entrar</button>
-        </div>
-      </form>
+            
+            {error && <p className="text-red-500 text-sm mt-4 text-center w-full">{error}</p>}
+            
+            <button type="submit" disabled={isLoading} className="mt-6 w-full bg-primary text-white py-2 rounded-md hover:bg-primary-dark transition-colors disabled:bg-primary-light disabled:cursor-wait">
+                {isLoading ? 'Ingresando...' : 'Entrar'}
+            </button>
+            <div className="text-center mt-4">
+                <p className="text-xs text-gray-500">Admin: admin@bombon.com / bombon123</p>
+                <p className="text-xs text-gray-500">Vendedor: vendedor@bombon.com / bombon123</p>
+            </div>
+        </form>
+      </div>
     </div>
   );
 };
 
 const Header: React.FC<{
-    logoUrl: string, cartItemCount: number, onLogoClick: () => void, onCartClick: () => void,
+    logoUrl: string, cartItemCount: number, onCartClick: () => void,
     isMobileMenuOpen: boolean, setMobileMenuOpen: (isOpen: boolean) => void,
     categories: Category[], onSelectCategory: (category: Category | 'All') => void
-}> = ({ logoUrl, cartItemCount, onLogoClick, onCartClick, isMobileMenuOpen, setMobileMenuOpen, categories, onSelectCategory }) => {
+}> = ({ logoUrl, cartItemCount, onCartClick, isMobileMenuOpen, setMobileMenuOpen, categories, onSelectCategory }) => {
     
     return (
         <header className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-sm shadow-md h-20">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-full">
                 <div className="flex items-center justify-between h-full">
-                    {/* Left side */}
                     <div className="flex-1 flex justify-start">
                         <button className="md:hidden text-on-surface" onClick={() => setMobileMenuOpen(true)}>
                             <MenuIcon className="w-6 h-6" />
                         </button>
                     </div>
 
-                    {/* Center */}
                     <div className="flex-shrink-0">
-                        <img onClick={onLogoClick} src={logoUrl} alt="Bombon Logo" className="h-14 w-auto cursor-pointer" />
+                        <img src={logoUrl} alt="Bombon Logo" className="h-14 w-auto" />
                     </div>
 
-                    {/* Right side */}
                     <div className="flex-1 flex justify-end">
                         <button onClick={onCartClick} className="relative text-on-surface hover:text-primary p-2">
                             <CartIcon className="w-6 h-6" />
@@ -746,7 +882,6 @@ const BannerCarousel: React.FC<{ banners: Banner[]; onNavigateToCategory: (categ
             const category = banner.link.split(':')[1];
             onNavigateToCategory(category as Category);
         }
-        // If it's a normal link like '#productos', the default href behavior will work
     };
 
     if (!banners || banners.length === 0) {
@@ -860,13 +995,11 @@ const ProductDetailModal: React.FC<{
 
     useEffect(() => {
       const sizes = product.variants?.sizes || {};
-      // Fix for error on line 817
       const availableSizes = Object.entries(sizes).filter(([,d]: [string, ProductVariantDetail]) => d.available).map(([s]) => s);
       if (product.variants?.hasSizes && availableSizes.length > 0) setSelectedSize(availableSizes[0]);
       else setSelectedSize(undefined);
 
       const colors = product.variants?.colors || {};
-      // Fix for error on line 822
       const availableColors = Object.entries(colors).filter(([,d]: [string, ProductColorVariantDetail]) => d.available).map(([c]) => c);
       if (product.variants?.hasColors && availableColors.length > 0) setSelectedColor(availableColors[0]);
       else setSelectedColor(undefined);
@@ -894,7 +1027,6 @@ const ProductDetailModal: React.FC<{
                         <div className="mb-4">
                             <h4 className="font-semibold mb-2 text-sm">Talla: <span className="font-normal text-gray-500">{selectedSize}</span></h4>
                             <div className="flex flex-wrap gap-2">
-                                {/* Fix for errors on lines 850, 851 */}
                                 {Object.entries(product.variants?.sizes || {}).map(([size, details]: [string, ProductVariantDetail]) => (
                                     <button key={size} onClick={() => setSelectedSize(size)} disabled={!details.available}
                                         className={`px-4 py-2 border rounded-md text-sm transition-colors ${selectedSize === size ? 'bg-primary text-white border-primary' : 'bg-white'} ${!details.available ? 'text-gray-400 bg-gray-100 line-through cursor-not-allowed' : 'hover:border-primary'}`}
@@ -908,7 +1040,6 @@ const ProductDetailModal: React.FC<{
                          <div className="mb-4">
                             <h4 className="font-semibold mb-2 text-sm">Color: <span className="font-normal text-gray-500">{selectedColor}</span></h4>
                             <div className="flex flex-wrap gap-2">
-                                {/* Fix for errors on lines 863, 864 */}
                                 {Object.entries(product.variants?.colors || {}).map(([color, details]: [string, ProductColorVariantDetail]) => (
                                     <button key={color} onClick={() => setSelectedColor(color)} disabled={!details.available}
                                         className={`px-4 py-2 border rounded-md text-sm transition-colors ${selectedColor === color ? 'bg-primary text-white border-primary' : 'bg-white'} ${!details.available ? 'text-gray-400 bg-gray-100 line-through cursor-not-allowed' : 'hover:border-primary'}`}
@@ -964,7 +1095,6 @@ const InvoiceModal: React.FC<{
             return;
         }
 
-        // Sanitize cart items for Firebase by removing undefined properties
         const sanitizedCartItems = cart.map(item => {
             const { size, color, ...rest } = item;
             const sanitizedItem: any = { ...rest };
@@ -1045,7 +1175,7 @@ const InvoiceModal: React.FC<{
     )
 }
 
-const Footer: React.FC<{ contact: StoreConfig['contact'], social: StoreConfig['social'] }> = ({ contact, social }) => (
+const Footer: React.FC<{ contact: StoreConfig['contact'], social: StoreConfig['social'], onAdminClick: () => void }> = ({ contact, social, onAdminClick }) => (
     <footer id="contacto" className="bg-gray-800 text-white">
         <div className="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8 grid grid-cols-1 md:grid-cols-3 gap-8">
             <div>
@@ -1070,7 +1200,10 @@ const Footer: React.FC<{ contact: StoreConfig['contact'], social: StoreConfig['s
             </div>
         </div>
         <div className="bg-gray-900 py-4">
-            <p className="text-center text-gray-500 text-sm">&copy; {new Date().getFullYear()} Bombon. Todos los derechos reservados.</p>
+             <div className="text-center text-gray-500 text-sm">
+                <span>&copy; {new Date().getFullYear()} Bombon. Todos los derechos reservados.</span>
+                <button onClick={onAdminClick} className="ml-4 text-gray-600 hover:text-gray-400 text-xs">Admin</button>
+            </div>
         </div>
     </footer>
 );
@@ -1084,7 +1217,6 @@ const AdminInput = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<
         <input ref={ref} {...props} className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary sm:text-sm disabled:bg-gray-100" />
     </div>
 ));
-
 
 const ImageUpload: React.FC<{
     currentImage: string;
@@ -1131,6 +1263,7 @@ const ImageUpload: React.FC<{
 };
 
 interface AdminPanelProps {
+    user: User;
     setOpen: (isOpen: boolean) => void;
     editMode: boolean;
     setEditMode: (isEditing: boolean) => void;
@@ -1140,6 +1273,7 @@ interface AdminPanelProps {
         products: Product[];
         categories: Category[];
         orders: Order[];
+        users: User[];
     };
     onUpdateConfig: (config: StoreConfig) => void;
     onSaveBanners: (banners: Banner[]) => void;
@@ -1150,30 +1284,37 @@ interface AdminPanelProps {
     formatCurrency: (amount: number) => string;
     productToEdit: Product | null;
     onDeleteOrder: (orderDocId: string) => void;
-    onUpdateOrderStatus: (orderDocId: string, status: Order['status']) => void;
+    onUpdateOrder: (orderDocId: string, data: Partial<Order>) => void;
+    onLogout: () => void;
+    onUpdateUserRole: (userDocId: string, newRole: User['role']) => void;
+    onDeleteUser: (userDocId: string) => void;
 }
 
 const AdminPanel: React.FC<AdminPanelProps> = (props) => {
     const {
-        setOpen, editMode, setEditMode, store,
+        user, setOpen, editMode, setEditMode, store,
         onUpdateConfig, onSaveBanners, onSaveCategories,
         onAddProduct, onUpdateProduct, onDeleteProduct,
-        formatCurrency, productToEdit, onDeleteOrder, onUpdateOrderStatus
+        formatCurrency, productToEdit, onDeleteOrder, onUpdateOrder,
+        onLogout, onUpdateUserRole, onDeleteUser
     } = props;
     
+    const isAdmin = user.role === 'admin';
+    const allTabs = ['Productos', 'Pedidos', 'Usuarios', 'Categorías', 'Banners', 'General'];
+    const availableTabs = isAdmin ? allTabs : ['Productos', 'Pedidos'];
+
     const [activeTab, setActiveTab] = useState('Productos');
-    const tabs = ['Productos', 'Categorías', 'Banners', 'General', 'Pedidos'];
     
     const [editingProduct, setEditingProduct] = useState<Product | null>(null);
     const [isAddingProduct, setIsAddingProduct] = useState(false);
 
     useEffect(() => {
-        if(productToEdit) {
+        if(productToEdit && isAdmin) {
             setEditingProduct(productToEdit);
             setIsAddingProduct(false);
             setActiveTab('Productos');
         }
-    }, [productToEdit]);
+    }, [productToEdit, isAdmin]);
 
     const handleEditProduct = (product: Product) => {
         setEditingProduct(product);
@@ -1234,29 +1375,38 @@ const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                             onAdd={handleAddNewProduct}
                             onDelete={onDeleteProduct}
                             formatCurrency={formatCurrency}
+                            isReadOnly={!isAdmin}
                         />;
             case 'Categorías':
-                return <AdminCategoriesTab 
+                return isAdmin ? <AdminCategoriesTab 
                             categories={props.store.categories}
                             onSave={onSaveCategories}
-                        />;
+                        /> : null;
             case 'Banners':
-                return <AdminBannersTab 
+                return isAdmin ? <AdminBannersTab 
                             banners={props.store.banners}
                             onSave={onSaveBanners}
-                        />;
+                        /> : null;
             case 'General':
-                return <AdminGeneralTab
+                return isAdmin ? <AdminGeneralTab
                             config={props.store.config}
                             onSave={onUpdateConfig}
-                        />;
+                        /> : null;
             case 'Pedidos':
                 return <AdminOrdersTab 
+                            user={user}
                             orders={props.store.orders}
                             formatCurrency={formatCurrency}
                             onDelete={onDeleteOrder}
-                            onUpdateStatus={onUpdateOrderStatus}
+                            onUpdate={onUpdateOrder}
                         />;
+            case 'Usuarios':
+                return isAdmin ? <AdminUsersTab 
+                            users={props.store.users}
+                            onUpdateRole={onUpdateUserRole}
+                            onDelete={onDeleteUser}
+                            currentUserId={user.uid}
+                        /> : null;
             default:
                 return null;
         }
@@ -1268,13 +1418,17 @@ const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                 <div className="w-64 bg-gray-800 text-white flex flex-col">
                     <div className="p-4 border-b border-gray-700">
                         <h2 className="text-xl font-bold">Panel de Admin</h2>
-                        <label htmlFor="editModeToggle" className="flex items-center space-x-2 mt-4 cursor-pointer">
-                            <input id="editModeToggle" type="checkbox" checked={editMode} onChange={(e) => setEditMode(e.target.checked)} className="w-4 h-4 text-primary bg-gray-700 border-gray-600 rounded focus:ring-primary"/>
-                             <span className="text-sm">Edición Rápida</span>
-                        </label>
+                        <p className="text-sm text-gray-400 capitalize">{user.role}</p>
+                        <p className="text-xs text-gray-500 truncate">{user.email}</p>
+                        {isAdmin && (
+                            <label htmlFor="editModeToggle" className="flex items-center space-x-2 mt-4 cursor-pointer">
+                                <input id="editModeToggle" type="checkbox" checked={editMode} onChange={(e) => setEditMode(e.target.checked)} className="w-4 h-4 text-primary bg-gray-700 border-gray-600 rounded focus:ring-primary"/>
+                                 <span className="text-sm">Edición Rápida</span>
+                            </label>
+                        )}
                     </div>
                     <nav className="flex-grow p-2">
-                        {tabs.map(tab => (
+                        {availableTabs.map(tab => (
                             <button
                                 key={tab}
                                 onClick={() => { setActiveTab(tab); handleCloseEditor(); }}
@@ -1282,7 +1436,8 @@ const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                             >{tab}</button>
                         ))}
                     </nav>
-                     <div className="p-4 border-t border-gray-700">
+                     <div className="p-4 border-t border-gray-700 space-y-2">
+                        <button onClick={onLogout} className="w-full text-left px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-700">Cerrar Sesión</button>
                         <button onClick={() => setOpen(false)} className="w-full text-left px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-700">Cerrar Panel</button>
                     </div>
                 </div>
@@ -1294,12 +1449,13 @@ const AdminPanel: React.FC<AdminPanelProps> = (props) => {
 
 const AdminProductsTab: React.FC<{
     products: Product[], onEdit: (p: Product) => void, onAdd: () => void,
-    onDelete: (id: string) => void, formatCurrency: (n: number) => string
-}> = ({ products, onEdit, onAdd, onDelete, formatCurrency }) => (
+    onDelete: (id: string) => void, formatCurrency: (n: number) => string,
+    isReadOnly: boolean
+}> = ({ products, onEdit, onAdd, onDelete, formatCurrency, isReadOnly }) => (
     <div className="p-6">
         <div className="flex justify-between items-center mb-6">
             <h1 className="text-2xl font-bold">Productos</h1>
-            <button onClick={onAdd} className="bg-primary text-white px-4 py-2 rounded-md hover:bg-primary-dark">Agregar Producto</button>
+            {!isReadOnly && <button onClick={onAdd} className="bg-primary text-white px-4 py-2 rounded-md hover:bg-primary-dark">Agregar Producto</button>}
         </div>
         <div className="bg-white rounded-lg shadow overflow-hidden">
             <table className="w-full">
@@ -1310,7 +1466,7 @@ const AdminProductsTab: React.FC<{
                         <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Categoría</th>
                         <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Precio</th>
                         <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Disponibilidad</th>
-                        <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
+                        {!isReadOnly && <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>}
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
@@ -1321,10 +1477,12 @@ const AdminProductsTab: React.FC<{
                             <td className="p-3 text-sm text-gray-500">{p.category}</td>
                             <td className="p-3 text-sm text-gray-500">{formatCurrency(p.price)}</td>
                             <td className="p-3"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${p.available ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{p.available ? 'Sí' : 'No'}</span></td>
-                            <td className="p-3 text-sm space-x-2">
-                                <button onClick={() => onEdit(p)} className="text-primary hover:text-primary-dark">Editar</button>
-                                <button onClick={() => onDelete(p.id)} className="text-red-600 hover:text-red-800">Eliminar</button>
-                            </td>
+                            {!isReadOnly && (
+                                <td className="p-3 text-sm space-x-2">
+                                    <button onClick={() => onEdit(p)} className="text-primary hover:text-primary-dark">Editar</button>
+                                    <button onClick={() => onDelete(p.id)} className="text-red-600 hover:text-red-800">Eliminar</button>
+                                </td>
+                            )}
                         </tr>
                     ))}
                 </tbody>
@@ -1444,13 +1602,66 @@ const AdminGeneralTab: React.FC<{config: StoreConfig, onSave: (c: StoreConfig) =
     );
 };
 
+const AdminUsersTab: React.FC<{
+    users: User[];
+    onUpdateRole: (docId: string, newRole: User['role']) => void;
+    onDelete: (docId: string) => void;
+    currentUserId: string;
+}> = ({ users, onUpdateRole, onDelete, currentUserId }) => {
+    return (
+        <div className="p-6">
+            <h1 className="text-2xl font-bold mb-6">Gestionar Usuarios</h1>
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+                <table className="w-full">
+                    <thead className="bg-gray-50">
+                        <tr>
+                            <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Correo Electrónico</th>
+                            <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rol</th>
+                            <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                        {(users || []).map(user => (
+                            <tr key={user.docId}>
+                                <td className="p-3 text-sm font-medium text-gray-900">{user.email}</td>
+                                <td className="p-3 text-sm text-gray-500">
+                                    <select
+                                        value={user.role}
+                                        onChange={(e) => onUpdateRole(user.docId, e.target.value as User['role'])}
+                                        disabled={user.uid === currentUserId} // Admin can't change their own role
+                                        className="bg-white border border-gray-300 rounded-md px-2 py-1 text-sm focus:ring-primary focus:border-primary disabled:bg-gray-100 disabled:cursor-not-allowed"
+                                    >
+                                        <option value="admin">Administrador</option>
+                                        <option value="vendedor">Vendedor</option>
+                                    </select>
+                                </td>
+                                <td className="p-3 text-sm">
+                                    <button
+                                        onClick={() => onDelete(user.docId)}
+                                        disabled={user.uid === currentUserId} // Admin can't delete themselves
+                                        className="text-red-600 hover:text-red-800 disabled:text-gray-400 disabled:cursor-not-allowed"
+                                    >
+                                        Eliminar
+                                    </button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+};
+
 const AdminOrdersTab: React.FC<{
+    user: User,
     orders: Order[],
     formatCurrency: (n: number) => string,
     onDelete: (docId: string) => void,
-    onUpdateStatus: (docId: string, status: Order['status']) => void,
-}> = ({ orders, formatCurrency, onDelete, onUpdateStatus }) => {
+    onUpdate: (docId: string, data: Partial<Order>) => void,
+}> = ({ user, orders, formatCurrency, onDelete, onUpdate }) => {
     const [statusFilter, setStatusFilter] = useState<'All' | Order['status']>('All');
+    const [viewingOrder, setViewingOrder] = useState<Order | null>(null);
 
     const filteredOrders = useMemo(() => {
         const sortedOrders = [...(orders || [])].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -1461,123 +1672,159 @@ const AdminOrdersTab: React.FC<{
     const salesReport = useMemo(() => {
         const reportOrders = statusFilter === 'All' ? orders : orders.filter(o => o.status === statusFilter);
         const totalRevenue = reportOrders.reduce((sum, order) => sum + order.total, 0);
-        const productSales: { [name: string]: { name: string, quantity: number, revenue: number } } = {};
+        const revenueByPaymentMethod = reportOrders.reduce((acc, order) => {
+            acc[order.paymentMethod] = (acc[order.paymentMethod] || 0) + order.total;
+            return acc;
+        }, {} as Record<string, number>);
 
+        const productSales: { [name: string]: { name: string, quantity: number, revenue: number } } = {};
         for (const order of reportOrders) {
             for (const item of order.items) {
-                if (!productSales[item.productId]) {
-                    productSales[item.productId] = { name: item.name, quantity: 0, revenue: 0 };
-                }
+                if (!productSales[item.productId]) { productSales[item.productId] = { name: item.name, quantity: 0, revenue: 0 }; }
                 productSales[item.productId].quantity += item.quantity;
                 productSales[item.productId].revenue += item.quantity * item.price;
             }
         }
-
         const topSellingProducts = Object.values(productSales).sort((a, b) => b.quantity - a.quantity).slice(0, 10);
 
-        return {
-            totalRevenue,
-            totalOrders: reportOrders.length,
-            topSellingProducts,
-        };
+        return { totalRevenue, totalOrders: reportOrders.length, topSellingProducts, revenueByPaymentMethod };
     }, [orders, statusFilter]);
 
     const orderStatuses: Order['status'][] = ['Pendiente', 'En Proceso', 'Enviado', 'Completado', 'Cancelado'];
-
-    const getStatusColor = (status: Order['status']) => {
-        switch (status) {
-            case 'Pendiente': return 'bg-yellow-100 text-yellow-800';
-            case 'En Proceso': return 'bg-blue-100 text-blue-800';
-            case 'Enviado': return 'bg-indigo-100 text-indigo-800';
-            case 'Completado': return 'bg-green-100 text-green-800';
-            case 'Cancelado': return 'bg-red-100 text-red-800';
-            default: return 'bg-gray-100 text-gray-800';
-        }
-    };
-
+    
     return (
-        <div className="p-6">
-            <h1 className="text-2xl font-bold mb-6">Pedidos e Informes</h1>
-            <div className="mb-8 bg-gray-50 p-4 rounded-lg">
-                <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-xl font-bold text-gray-800">Informe de Ventas</h2>
-                    <div className="flex items-center space-x-2">
-                        <label htmlFor="statusFilter" className="text-sm font-medium">Filtrar por estado:</label>
-                        <select
-                            id="statusFilter"
-                            value={statusFilter}
-                            onChange={(e) => setStatusFilter(e.target.value as any)}
-                            className="bg-white border border-gray-300 rounded-md px-2 py-1 text-sm focus:ring-primary focus:border-primary"
-                        >
-                            <option value="All">Todos</option>
-                            {orderStatuses.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
+        <>
+            <div className="p-6">
+                <h1 className="text-2xl font-bold mb-6">Pedidos e Informes</h1>
+                {user.role === 'admin' && (
+                    <div className="mb-8 bg-gray-50 p-4 rounded-lg">
+                        <div className="flex justify-between items-center mb-4">
+                            <h2 className="text-xl font-bold text-gray-800">Informe de Ventas</h2>
+                            <div className="flex items-center space-x-2">
+                                <label htmlFor="statusFilter" className="text-sm font-medium">Filtrar por estado:</label>
+                                <select id="statusFilter" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)} className="bg-white border border-gray-300 rounded-md px-2 py-1 text-sm focus:ring-primary focus:border-primary">
+                                    <option value="All">Todos</option>
+                                    {orderStatuses.map(s => <option key={s} value={s}>{s}</option>)}
+                                </select>
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                            <div className="bg-white p-4 rounded-lg shadow"><h3 className="text-sm font-medium text-gray-500">Ingresos Totales</h3><p className="text-2xl font-bold text-gray-900">{formatCurrency(salesReport.totalRevenue)}</p></div>
+                            <div className="bg-white p-4 rounded-lg shadow"><h3 className="text-sm font-medium text-gray-500">Total Pedidos</h3><p className="text-2xl font-bold text-gray-900">{salesReport.totalOrders}</p></div>
+                            <div className="bg-white p-4 rounded-lg shadow md:col-span-2 lg:col-span-2"><h3 className="text-sm font-medium text-gray-500 mb-2">Ingresos por Medio de Pago</h3>
+                                {Object.keys(salesReport.revenueByPaymentMethod).length > 0 ? (<div className="space-y-1">{Object.entries(salesReport.revenueByPaymentMethod).map(([method, amount]) => (<div key={method} className="flex justify-between text-sm"><span className="font-medium">{method}:</span><span>{formatCurrency(amount)}</span></div>))}</div>) : (<p className="text-sm text-gray-500">No hay datos.</p>)}
+                            </div>
+                            <div className="bg-white p-4 rounded-lg shadow md:col-span-2 lg:col-span-4"><h3 className="text-sm font-medium text-gray-500 mb-2">Productos Más Vendidos (Top 10)</h3>
+                                {salesReport.topSellingProducts.length > 0 ? (<ul className="space-y-2 max-h-48 overflow-y-auto">{salesReport.topSellingProducts.map(p => (<li key={p.name} className="flex justify-between items-center text-sm border-b pb-1"><span className="font-medium text-gray-700">{p.name}</span><span className="text-gray-500">Vendidos: <span className="font-bold text-gray-800">{p.quantity}</span></span></li>))}</ul>) : (<p className="text-sm text-gray-500">No hay datos de productos vendidos para este filtro.</p>)}
+                            </div>
+                        </div>
                     </div>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="bg-white p-4 rounded-lg shadow">
-                        <h3 className="text-sm font-medium text-gray-500">Ingresos Totales</h3>
-                        <p className="text-2xl font-bold text-gray-900">{formatCurrency(salesReport.totalRevenue)}</p>
-                    </div>
-                    <div className="bg-white p-4 rounded-lg shadow">
-                        <h3 className="text-sm font-medium text-gray-500">Total Pedidos</h3>
-                        <p className="text-2xl font-bold text-gray-900">{salesReport.totalOrders}</p>
-                    </div>
-                    <div className="bg-white p-4 rounded-lg shadow md:col-span-3">
-                        <h3 className="text-sm font-medium text-gray-500 mb-2">Productos Más Vendidos (Top 10)</h3>
-                        {salesReport.topSellingProducts.length > 0 ? (
-                            <ul className="space-y-2 max-h-48 overflow-y-auto">
-                                {salesReport.topSellingProducts.map(p => (
-                                    <li key={p.name} className="flex justify-between items-center text-sm border-b pb-1">
-                                        <span className="font-medium text-gray-700">{p.name}</span>
-                                        <span className="text-gray-500">Vendidos: <span className="font-bold text-gray-800">{p.quantity}</span></span>
-                                    </li>
-                                ))}
-                            </ul>
-                        ) : (
-                            <p className="text-sm text-gray-500">No hay datos de productos vendidos para este filtro.</p>
-                        )}
-                    </div>
-                </div>
-            </div>
-            <div className="bg-white rounded-lg shadow overflow-x-auto">
-                <table className="w-full min-w-max">
-                    <thead className="bg-gray-50">
-                        <tr>
+                )}
+                <div className="bg-white rounded-lg shadow overflow-x-auto">
+                    <table className="w-full min-w-max">
+                        <thead className="bg-gray-50"><tr>
                             <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID Orden</th>
                             <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha</th>
                             <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cliente</th>
                             <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
-                            <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Entrega</th>
                             <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
                             <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200">
-                        {(!filteredOrders || filteredOrders.length === 0) && <tr><td colSpan={7} className="p-4 text-center text-gray-500">No hay pedidos que coincidan con el filtro.</td></tr>}
-                        {filteredOrders.map(o => (
-                            <tr key={o.docId}>
-                                <td className="p-3 text-sm font-medium text-gray-900">{o.orderNumber}</td>
-                                <td className="p-3 text-sm text-gray-500">{new Date(o.date).toLocaleDateString()}</td>
-                                <td className="p-3 text-sm text-gray-500">{o.customerName}</td>
-                                <td className="p-3 text-sm text-gray-500">{formatCurrency(o.total)}</td>
-                                <td className="p-3 text-sm text-gray-500">{o.deliveryMethod}</td>
-                                <td className="p-3 text-sm text-gray-500">
-                                    <select
-                                        value={o.status}
-                                        onChange={(e) => onUpdateStatus(o.docId, e.target.value as Order['status'])}
-                                        className={`w-full text-xs appearance-none font-semibold rounded-md border-0 py-1.5 pl-2 pr-7 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-primary ${getStatusColor(o.status)}`}
-                                    >
-                                        {orderStatuses.map(s => <option key={s} value={s}>{s}</option>)}
-                                    </select>
-                                </td>
-                                <td className="p-3 text-sm">
-                                    <button onClick={() => onDelete(o.docId)} className="text-red-500 hover:text-red-700 p-1"><TrashIcon className="w-5 h-5" /></button>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
+                        </tr></thead>
+                        <tbody className="divide-y divide-gray-200">
+                            {(!filteredOrders || filteredOrders.length === 0) && <tr><td colSpan={6} className="p-4 text-center text-gray-500">No hay pedidos que coincidan con el filtro.</td></tr>}
+                            {filteredOrders.map(o => (
+                                <tr key={o.docId} className="hover:bg-gray-50">
+                                    <td className="p-3 text-sm font-medium text-gray-900">{o.orderNumber}</td>
+                                    <td className="p-3 text-sm text-gray-500">{new Date(o.date).toLocaleDateString()}</td>
+                                    <td className="p-3 text-sm text-gray-500">{o.customerName}</td>
+                                    <td className="p-3 text-sm text-gray-500">{formatCurrency(o.total)}</td>
+                                    <td className="p-3 text-sm text-gray-500">{o.status}</td>
+                                    <td className="p-3 text-sm space-x-2">
+                                        <button onClick={() => setViewingOrder(o)} className="text-primary hover:text-primary-dark font-medium">Ver/Editar</button>
+                                        <button onClick={() => onDelete(o.docId)} className="text-red-500 hover:text-red-700"><TrashIcon className="w-4 h-4 inline-block" /></button>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {viewingOrder && <OrderDetailModal order={viewingOrder} onClose={() => setViewingOrder(null)} onSave={onUpdate} formatCurrency={formatCurrency} />}
+        </>
+    );
+};
+
+const OrderDetailModal: React.FC<{
+    order: Order;
+    onClose: () => void;
+    onSave: (docId: string, data: Partial<Order>) => void;
+    formatCurrency: (n: number) => string;
+}> = ({ order, onClose, onSave, formatCurrency }) => {
+    const [editedOrder, setEditedOrder] = useState(order);
+    const orderStatuses: Order['status'][] = ['Pendiente', 'En Proceso', 'Enviado', 'Completado', 'Cancelado'];
+    const paymentOptions = ['Nequi', 'Daviplata', 'Tarjeta', 'Addi', 'Sistecredito'];
+
+    const handleSave = () => {
+        const changes: Partial<Order> = {};
+        if (editedOrder.status !== order.status) changes.status = editedOrder.status;
+        if (editedOrder.paymentMethod !== order.paymentMethod) changes.paymentMethod = editedOrder.paymentMethod;
+        
+        if (Object.keys(changes).length > 0) {
+            onSave(order.docId, changes);
+        }
+        onClose();
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black/60 z-[95] flex items-center justify-center p-4" onClick={onClose}>
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                <div className="flex justify-between items-center p-4 border-b">
+                    <h2 className="text-xl font-semibold">Detalle del Pedido: {order.orderNumber}</h2>
+                    <button onClick={onClose}><CloseIcon className="w-6 h-6" /></button>
+                </div>
+                <div className="p-6 overflow-y-auto space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                        <div><h3 className="font-semibold">Cliente:</h3><p>{order.customerName}</p></div>
+                        <div><h3 className="font-semibold">Teléfono:</h3><p>{order.customerPhone}</p></div>
+                        <div><h3 className="font-semibold">Fecha:</h3><p>{new Date(order.date).toLocaleString()}</p></div>
+                        <div><h3 className="font-semibold">Entrega:</h3><p>{order.deliveryMethod}</p></div>
+                        {order.address && <div className="col-span-2"><h3 className="font-semibold">Dirección:</h3><p>{order.address}</p></div>}
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                         <div>
+                            <label className="block text-sm font-medium mb-1">Estado del Pedido</label>
+                            <select value={editedOrder.status} onChange={e => setEditedOrder({...editedOrder, status: e.target.value as Order['status']})} className="w-full bg-surface border border-gray-300 rounded-md px-3 py-2 focus:ring-primary focus:border-primary">
+                                {orderStatuses.map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                        </div>
+                         <div>
+                            <label className="block text-sm font-medium mb-1">Medio de Pago</label>
+                            <select value={editedOrder.paymentMethod} onChange={e => setEditedOrder({...editedOrder, paymentMethod: e.target.value})} className="w-full bg-surface border border-gray-300 rounded-md px-3 py-2 focus:ring-primary focus:border-primary">
+                                {paymentOptions.map(p => <option key={p} value={p}>{p}</option>)}
+                            </select>
+                        </div>
+                    </div>
+                    <div>
+                        <h3 className="font-semibold border-t pt-2">Items:</h3>
+                        <ul className="divide-y">
+                            {order.items.map(item => (
+                                <li key={item.id} className="py-2 flex justify-between">
+                                    <span>{item.quantity} x {item.name} {item.size && `(${item.size})`} {item.color && `(${item.color})`}</span>
+                                    <span>{formatCurrency(item.price * item.quantity)}</span>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                     <div className="bg-surface p-4 rounded-lg space-y-2 mt-4 text-right">
+                        <div className="flex justify-between text-sm"><span>Subtotal</span><span>{formatCurrency(order.subtotal)}</span></div>
+                        <div className="flex justify-between text-sm"><span>Envío</span><span>{formatCurrency(order.shippingCost)}</span></div>
+                        <div className="flex justify-between font-bold text-lg border-t pt-2 mt-2"><span>Total</span><span>{formatCurrency(order.total)}</span></div>
+                     </div>
+                </div>
+                <div className="p-4 border-t bg-gray-50 flex justify-end space-x-2">
+                    <button onClick={onClose} className="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">Cancelar</button>
+                    <button onClick={handleSave} className="bg-primary text-white px-4 py-2 rounded-md hover:bg-primary-dark">Guardar Cambios</button>
+                </div>
             </div>
         </div>
     );
@@ -1655,7 +1902,6 @@ const ProductEditor: React.FC<{
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Columna Izquierda: Detalles Básicos */}
                 <div className="lg:col-span-2 bg-white rounded-lg shadow p-6 space-y-4">
                     <AdminInput label="Nombre del Producto" value={edited.name} onChange={e => handleChange('name', e.target.value)} />
                     <div>
@@ -1678,11 +1924,9 @@ const ProductEditor: React.FC<{
                     </div>
                 </div>
 
-                {/* Columna Derecha: Variantes */}
                 <div className="lg:col-span-1 bg-white rounded-lg shadow p-6 space-y-6">
                     <h3 className="font-bold text-lg">Variantes</h3>
                     
-                    {/* Tallas */}
                     <div className="border-t pt-4">
                         <div className="flex items-center space-x-2 mb-2">
                            <input type="checkbox" id="hasSizes" checked={edited.variants?.hasSizes || false} onChange={e => handleVariantChange('hasSizes', e.target.checked)} className="h-4 w-4 text-primary rounded border-gray-300 focus:ring-primary" />
@@ -1694,7 +1938,6 @@ const ProductEditor: React.FC<{
                                     <input type="text" value={newSize} onChange={e => setNewSize(e.target.value)} placeholder="Ej: S, M, 36" className="w-full text-sm px-2 py-1 border border-gray-300 rounded-md"/>
                                     <button onClick={handleSizeAdd} className="bg-gray-200 px-3 py-1 text-sm rounded-md">+</button>
                                 </div>
-                                {/* Fix for error on line 1538 */}
                                 {Object.entries(edited.variants?.sizes || {}).map(([size, detail]: [string, ProductVariantDetail]) => (
                                     <div key={size} className="flex justify-between items-center text-sm">
                                         <span>{size}</span>
@@ -1708,7 +1951,6 @@ const ProductEditor: React.FC<{
                         )}
                     </div>
                     
-                    {/* Colores */}
                     <div className="border-t pt-4">
                         <div className="flex items-center space-x-2 mb-2">
                            <input type="checkbox" id="hasColors" checked={edited.variants?.hasColors || false} onChange={e => handleVariantChange('hasColors', e.target.checked)} className="h-4 w-4 text-primary rounded border-gray-300 focus:ring-primary"/>
@@ -1720,7 +1962,6 @@ const ProductEditor: React.FC<{
                                     <input type="text" value={newColor} onChange={e => setNewColor(e.target.value)} placeholder="Ej: Rojo, Azul" className="w-full text-sm px-2 py-1 border border-gray-300 rounded-md"/>
                                     <button onClick={handleColorAdd} className="bg-gray-200 px-3 py-1 text-sm rounded-md">+</button>
                                 </div>
-                                {/* Fix for errors on lines 1565, 1566 */}
                                 {Object.entries(edited.variants?.colors || {}).map(([color, detail]: [string, ProductColorVariantDetail]) => (
                                     <div key={color} className="space-y-2 p-2 border rounded-md">
                                         <div className="flex justify-between items-center text-sm font-medium">
