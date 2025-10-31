@@ -22,6 +22,7 @@ export interface Product {
   imageUrl: string;
   available: boolean;
   variants: ProductVariants;
+  discountPercentage?: number;
 }
 
 export type Category = string;

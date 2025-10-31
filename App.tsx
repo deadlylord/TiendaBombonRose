@@ -30,6 +30,7 @@ const initialProducts: Product[] = [
     {
         id: 'prod1', name: 'Blusa de Seda "Aurora"', description: 'Elegante blusa de seda con un corte clásico y un tacto suave.',
         price: 180000, category: 'Blusas', imageUrl: 'https://i.ibb.co/f2sN19v/blusa-rosa.jpg', available: true,
+        discountPercentage: 20,
         variants: {
             hasSizes: true, sizes: { 'S': { available: true }, 'M': { available: true }, 'L': { available: false } },
             hasColors: true, colors: {
@@ -49,6 +50,7 @@ const initialProducts: Product[] = [
     {
         id: 'prod3', name: 'Pantalón Palazzo "Elegancia"', description: 'Pantalón de pierna ancha que estiliza la figura.',
         price: 220000, category: 'Pantalones', imageUrl: 'https://i.ibb.co/jWw9y1J/pantalon-negro.jpg', available: true,
+        discountPercentage: 15,
         variants: {
             hasSizes: true, sizes: { '34': { available: true }, '36': { available: true }, '38': { available: true } },
             hasColors: true, colors: {
@@ -305,6 +307,10 @@ const App: React.FC = () => {
     const handleAddToCart = (product: Product, quantity: number, size?: string, color?: string) => {
         const cartItemId = `${product.id}${size ? `-${size}` : ''}${color ? `-${color}` : ''}`;
         const existingItem = cart.find(item => item.id === cartItemId);
+
+        const finalPrice = (product.discountPercentage && product.discountPercentage > 0)
+            ? product.price * (1 - product.discountPercentage / 100)
+            : product.price;
         
         if (existingItem) {
             setCart(cart.map(item => item.id === cartItemId ? { ...item, quantity: item.quantity + quantity } : item));
@@ -313,7 +319,7 @@ const App: React.FC = () => {
                 id: cartItemId,
                 productId: product.id,
                 name: product.name,
-                price: product.price,
+                price: finalPrice,
                 quantity,
                 imageUrl: (color && product.variants?.colors?.[color]?.imageUrl) || product.imageUrl,
                 size,
@@ -536,38 +542,51 @@ const App: React.FC = () => {
         </div>
     );
     
-    const ProductCard: React.FC<{ product: Product }> = ({ product }) => (
-      <div className="relative group bg-white rounded-lg shadow-md overflow-hidden flex flex-col h-full cursor-pointer" onClick={() => handleOpenProductDetails(product)}>
-        <div className="relative aspect-[4/5] w-full overflow-hidden">
-            <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
-            {!product.available && (
-                <div className="absolute top-2 left-2 bg-on-surface text-background text-xs font-bold px-2 py-1 rounded">AGOTADO</div>
-            )}
-            <div className="absolute top-2 right-2">
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleQuickAddToCart(product); }}
-                  className="bg-white/80 backdrop-blur-sm text-primary rounded-full p-2 shadow-md hover:bg-white transition-all scale-0 group-hover:scale-100 disabled:opacity-50"
-                  aria-label="Agregar al carrito"
-                  disabled={!product.available}
-                >
-                  <PlusIcon className="w-5 h-5" />
-                </button>
+    const ProductCard: React.FC<{ product: Product }> = ({ product }) => {
+        const hasDiscount = product.discountPercentage && product.discountPercentage > 0;
+        const discountedPrice = hasDiscount ? product.price * (1 - product.discountPercentage! / 100) : product.price;
+
+        return (
+            <div className="relative group bg-white rounded-lg shadow-md overflow-hidden flex flex-col h-full cursor-pointer" onClick={() => handleOpenProductDetails(product)}>
+                <div className="relative aspect-[4/5] w-full overflow-hidden">
+                    <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                    {!product.available && (
+                        <div className="absolute top-2 left-2 bg-on-surface text-background text-xs font-bold px-2 py-1 rounded">AGOTADO</div>
+                    )}
+                    {hasDiscount && (
+                        <div className="absolute top-2 right-2 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded">{product.discountPercentage}% OFF</div>
+                    )}
+                    <div className="absolute bottom-2 right-2">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleQuickAddToCart(product); }}
+                          className="bg-white/80 backdrop-blur-sm text-primary rounded-full p-2 shadow-md hover:bg-white transition-all scale-0 group-hover:scale-100 disabled:opacity-50"
+                          aria-label="Agregar al carrito"
+                          disabled={!product.available}
+                        >
+                          <PlusIcon className="w-5 h-5" />
+                        </button>
+                    </div>
+                     {editMode && (userData?.role === 'admin' || userData?.role === 'vendedor') && (
+                      <div className="absolute inset-0 bg-black/50 flex items-center justify-center space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={(e) => {e.stopPropagation(); handleOpenProductEdit(product);}} className="bg-white text-on-surface px-3 py-1 rounded text-sm font-semibold flex items-center space-x-1">
+                          <PencilIcon className="w-4 h-4"/>
+                          <span>Editar</span>
+                        </button>
+                      </div>
+                    )}
+                </div>
+                <div className="p-4 flex flex-col flex-grow">
+                    <h3 className="font-semibold text-sm truncate">{product.name}</h3>
+                    <div className="flex items-baseline gap-2 mt-1">
+                        {hasDiscount && (
+                           <span className="text-gray-500 line-through text-sm">{formatCurrency(product.price)}</span>
+                        )}
+                        <span className="text-primary font-bold text-base">{formatCurrency(discountedPrice)}</span>
+                    </div>
+                </div>
             </div>
-             {editMode && userData?.role === 'admin' && (
-              <div className="absolute inset-0 bg-black/50 flex items-center justify-center space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button onClick={(e) => {e.stopPropagation(); handleOpenProductEdit(product);}} className="bg-white text-on-surface px-3 py-1 rounded text-sm font-semibold flex items-center space-x-1">
-                  <PencilIcon className="w-4 h-4"/>
-                  <span>Editar</span>
-                </button>
-              </div>
-            )}
-        </div>
-        <div className="p-4 flex flex-col flex-grow">
-            <h3 className="font-semibold text-sm truncate">{product.name}</h3>
-            <p className="text-primary font-bold mt-1 text-base">{formatCurrency(product.price)}</p>
-        </div>
-      </div>
-    );
+        );
+    };
 
     const ProductCarousel = ({ title, products: carouselProducts }: { title: string, products: Product[] }) => (
       <section className="py-12 bg-white">
@@ -653,12 +672,18 @@ const App: React.FC = () => {
             <main className="pt-12">
                 <BannerCarousel banners={banners} onNavigateToCategory={handleNavigateToCategory} />
                 
-                <ProductCarousel title="Lo Nuevo" products={newArrivals} />
-                <ProductCarousel title="Más Vendidos" products={bestSellers} />
+                {selectedCategory === 'All' && (
+                  <>
+                    <ProductCarousel title="Lo Nuevo" products={newArrivals} />
+                    <ProductCarousel title="Más Vendidos" products={bestSellers} />
+                  </>
+                )}
                 
                 <section id="productos" className="py-12 bg-surface">
                     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                        <h2 className="text-3xl font-serif text-center mb-8 text-on-surface">Todo Nuestro Catálogo</h2>
+                        <h2 className="text-3xl font-serif text-center mb-8 text-on-surface">
+                           {selectedCategory === 'All' ? 'Todo Nuestro Catálogo' : selectedCategory}
+                        </h2>
                          <div className="flex justify-center mb-8">
                             <div className="relative w-full md:w-1/2">
                                <input 
@@ -1123,6 +1148,9 @@ const ProductDetailModal: React.FC<{
     const displayImage = selectedColor && product.variants?.colors?.[selectedColor]?.imageUrl
         ? product.variants.colors[selectedColor]!.imageUrl
         : product.imageUrl;
+    
+    const hasDiscount = product.discountPercentage && product.discountPercentage > 0;
+    const discountedPrice = hasDiscount ? product.price * (1 - product.discountPercentage! / 100) : product.price;
 
     const isAddToCartDisabled = !product.available || (product.variants?.hasSizes && !selectedSize) || (product.variants?.hasColors && !selectedColor);
 
@@ -1135,7 +1163,12 @@ const ProductDetailModal: React.FC<{
                 <div className="w-full md:w-1/2 p-6 flex flex-col md:overflow-y-auto relative scrollbar-hide">
                     <button onClick={onClose} className="absolute top-4 right-4 text-gray-500 hover:text-black p-1 rounded-full bg-white/50 hover:bg-white z-10"><CloseIcon className="w-6 h-6"/></button>
                     <h2 className="text-2xl font-bold font-serif pr-8">{product.name}</h2>
-                    <p className="text-2xl text-primary font-bold my-2">{formatCurrency(product.price)}</p>
+                    <div className="flex items-baseline gap-3 my-2">
+                        {hasDiscount && (
+                            <span className="text-gray-500 line-through text-2xl">{formatCurrency(product.price)}</span>
+                        )}
+                        <span className="text-primary font-bold text-3xl">{formatCurrency(discountedPrice)}</span>
+                    </div>
                     <p className="text-gray-600 text-sm mb-4">{product.description}</p>
                     
                     {product.variants?.hasSizes && (
@@ -1416,6 +1449,8 @@ const AdminPanel: React.FC<AdminPanelProps> = (props) => {
     } = props;
     
     const isAdmin = user.role === 'admin';
+    const canManageProducts = user.role === 'admin' || user.role === 'vendedor';
+
     const allTabs = ['Productos', 'Pedidos', 'Usuarios', 'Categorías', 'Banners', 'General'];
     const availableTabs = isAdmin ? allTabs : ['Productos', 'Pedidos'];
 
@@ -1425,12 +1460,12 @@ const AdminPanel: React.FC<AdminPanelProps> = (props) => {
     const [isAddingProduct, setIsAddingProduct] = useState(false);
 
     useEffect(() => {
-        if(productToEdit && isAdmin) {
+        if(productToEdit && canManageProducts) {
             setEditingProduct(productToEdit);
             setIsAddingProduct(false);
             setActiveTab('Productos');
         }
-    }, [productToEdit, isAdmin]);
+    }, [productToEdit, canManageProducts]);
 
     const handleEditProduct = (product: Product) => {
         setEditingProduct(product);
@@ -1447,6 +1482,7 @@ const AdminPanel: React.FC<AdminPanelProps> = (props) => {
             category: (props.store.categories || [])[0] || '',
             imageUrl: '',
             available: true,
+            discountPercentage: 0,
             variants: {
                 hasSizes: false, sizes: {},
                 hasColors: false, colors: {}
@@ -1471,7 +1507,7 @@ const AdminPanel: React.FC<AdminPanelProps> = (props) => {
     };
 
     const renderContent = () => {
-        if (editingProduct) {
+        if (editingProduct && canManageProducts) {
             return <ProductEditor 
                 key={editingProduct.id}
                 product={editingProduct}
@@ -1487,11 +1523,12 @@ const AdminPanel: React.FC<AdminPanelProps> = (props) => {
             case 'Productos':
                 return <AdminProductsTab 
                             products={props.store.products}
+                            categories={props.store.categories}
                             onEdit={handleEditProduct}
                             onAdd={handleAddNewProduct}
                             onDelete={onDeleteProduct}
                             formatCurrency={formatCurrency}
-                            isReadOnly={!isAdmin}
+                            canManageProducts={canManageProducts}
                         />;
             case 'Categorías':
                 return isAdmin ? <AdminCategoriesTab 
@@ -1537,7 +1574,7 @@ const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                         <h2 className="text-xl font-bold">Panel de Admin</h2>
                         <p className="text-sm text-gray-400 capitalize">{user.role}</p>
                         <p className="text-xs text-gray-500 truncate">{user.email}</p>
-                        {isAdmin && (
+                        {canManageProducts && (
                             <label htmlFor="editModeToggle" className="flex items-center space-x-2 mt-4 cursor-pointer">
                                 <input id="editModeToggle" type="checkbox" checked={editMode} onChange={(e) => setEditMode(e.target.checked)} className="w-4 h-4 text-primary bg-gray-700 border-gray-600 rounded focus:ring-primary"/>
                                  <span className="text-sm">Edición Rápida</span>
@@ -1565,48 +1602,102 @@ const AdminPanel: React.FC<AdminPanelProps> = (props) => {
 };
 
 const AdminProductsTab: React.FC<{
-    products: Product[], onEdit: (p: Product) => void, onAdd: () => void,
-    onDelete: (id: string) => void, formatCurrency: (n: number) => string,
-    isReadOnly: boolean
-}> = ({ products, onEdit, onAdd, onDelete, formatCurrency, isReadOnly }) => (
-    <div className="p-6">
-        <div className="flex justify-between items-center mb-6">
-            <h1 className="text-2xl font-bold">Productos</h1>
-            {!isReadOnly && <button onClick={onAdd} className="bg-primary text-white px-4 py-2 rounded-md hover:bg-primary-dark">Agregar Producto</button>}
-        </div>
-        <div className="bg-white rounded-lg shadow overflow-hidden">
-            <table className="w-full">
-                <thead className="bg-gray-50">
-                    <tr>
-                        <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Imagen</th>
-                        <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nombre</th>
-                        <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Categoría</th>
-                        <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Precio</th>
-                        <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Disponibilidad</th>
-                        {!isReadOnly && <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>}
-                    </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                    {(products || []).map(p => (
-                        <tr key={p.id}>
-                            <td className="p-3"><img src={p.imageUrl} alt={p.name} className="w-12 h-16 object-cover rounded-md" /></td>
-                            <td className="p-3 text-sm font-medium text-gray-900">{p.name}</td>
-                            <td className="p-3 text-sm text-gray-500">{p.category}</td>
-                            <td className="p-3 text-sm text-gray-500">{formatCurrency(p.price)}</td>
-                            <td className="p-3"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${p.available ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{p.available ? 'Sí' : 'No'}</span></td>
-                            {!isReadOnly && (
-                                <td className="p-3 text-sm space-x-2">
-                                    <button onClick={() => onEdit(p)} className="text-primary hover:text-primary-dark">Editar</button>
-                                    <button onClick={() => onDelete(p.id)} className="text-red-600 hover:text-red-800">Eliminar</button>
-                                </td>
-                            )}
-                        </tr>
+    products: Product[],
+    categories: Category[],
+    onEdit: (p: Product) => void,
+    onAdd: () => void,
+    onDelete: (id: string) => void,
+    formatCurrency: (n: number) => string,
+    canManageProducts: boolean
+}> = ({ products, categories, onEdit, onAdd, onDelete, formatCurrency, canManageProducts }) => {
+    const [activeFilter, setActiveFilter] = useState('All');
+
+    const categoryCounts = useMemo(() => {
+        const counts = new Map<string, number>();
+        for (const cat of categories) {
+            counts.set(cat, 0);
+        }
+        for (const product of products) {
+            counts.set(product.category, (counts.get(product.category) || 0) + 1);
+        }
+        return counts;
+    }, [products, categories]);
+    
+    const filteredDisplayProducts = useMemo(() => {
+        if (activeFilter === 'All') {
+            return products;
+        }
+        return products.filter(p => p.category === activeFilter);
+    }, [products, activeFilter]);
+    
+    return (
+        <div className="p-6">
+            <div className="flex justify-between items-center mb-4">
+                <h1 className="text-2xl font-bold">Productos</h1>
+                {canManageProducts && <button onClick={onAdd} className="bg-primary text-white px-4 py-2 rounded-md hover:bg-primary-dark">Agregar Producto</button>}
+            </div>
+             <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+                <h3 className="font-semibold text-gray-700 mb-2">Filtrar por Categoría</h3>
+                <div className="flex flex-wrap gap-2">
+                    <button
+                        onClick={() => setActiveFilter('All')}
+                        className={`px-3 py-1.5 rounded-md text-sm transition-colors ${activeFilter === 'All' ? 'bg-primary text-white font-semibold' : 'bg-white border border-gray-200 hover:bg-pink-50'}`}
+                    >
+                        Todos <span className="text-xs opacity-75 ml-1">({products.length})</span>
+                    </button>
+                    {Array.from(categoryCounts.entries()).map(([category, count]) => (
+                         <button
+                            key={category}
+                            onClick={() => setActiveFilter(category)}
+                            className={`px-3 py-1.5 rounded-md text-sm transition-colors ${activeFilter === category ? 'bg-primary text-white font-semibold' : 'bg-white border border-gray-200 hover:bg-pink-50'}`}
+                        >
+                            {category} <span className="text-xs opacity-75 ml-1">({count})</span>
+                        </button>
                     ))}
-                </tbody>
-            </table>
+                </div>
+            </div>
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+                <table className="w-full">
+                    <thead className="bg-gray-50">
+                        <tr>
+                            <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Imagen</th>
+                            <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nombre</th>
+                            <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Categoría</th>
+                            <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Precio</th>
+                            <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Disponibilidad</th>
+                            {canManageProducts && <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>}
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                         {filteredDisplayProducts.length === 0 && (
+                            <tr>
+                                <td colSpan={canManageProducts ? 6 : 5} className="text-center py-8 text-gray-500">
+                                    No hay productos en esta categoría.
+                                </td>
+                            </tr>
+                        )}
+                        {filteredDisplayProducts.map(p => (
+                            <tr key={p.id}>
+                                <td className="p-3"><img src={p.imageUrl} alt={p.name} className="w-12 h-16 object-cover rounded-md" /></td>
+                                <td className="p-3 text-sm font-medium text-gray-900">{p.name}</td>
+                                <td className="p-3 text-sm text-gray-500">{p.category}</td>
+                                <td className="p-3 text-sm text-gray-500">{formatCurrency(p.price)}</td>
+                                <td className="p-3"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${p.available ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{p.available ? 'Sí' : 'No'}</span></td>
+                                {canManageProducts && (
+                                    <td className="p-3 text-sm space-x-2">
+                                        <button onClick={() => onEdit(p)} className="text-primary hover:text-primary-dark">Editar</button>
+                                        <button onClick={() => onDelete(p.id)} className="text-red-600 hover:text-red-800">Eliminar</button>
+                                    </td>
+                                )}
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
         </div>
-    </div>
-);
+    );
+};
+
 
 const AdminCategoriesTab: React.FC<{categories: Category[], onSave: (cats: Category[]) => void}> = ({ categories, onSave }) => {
     const [localCategories, setLocalCategories] = useState(categories || []);
@@ -2029,8 +2120,20 @@ const ProductEditor: React.FC<{
                         <label className="block text-sm font-medium text-gray-700 mb-1">Descripción</label>
                         <textarea value={edited.description} onChange={e => handleChange('description', e.target.value)} rows={4} className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"/>
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-3 gap-4">
                         <AdminInput label="Precio (COP)" type="number" value={edited.price} onChange={e => handleChange('price', parseFloat(e.target.value) || 0)} />
+                        <AdminInput 
+                            label="Descuento (%)" 
+                            type="number" 
+                            value={edited.discountPercentage || ''} 
+                            onChange={e => {
+                                const value = Math.max(0, Math.min(100, parseInt(e.target.value, 10) || 0));
+                                handleChange('discountPercentage', value);
+                            }} 
+                            min="0" 
+                            max="100"
+                            placeholder="Ej: 15"
+                        />
                          <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Categoría</label>
                             <select value={edited.category} onChange={e => handleChange('category', e.target.value)} className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary sm:text-sm">
