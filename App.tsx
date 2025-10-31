@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Product, Category, Banner, StoreConfig, CartItem, Order, ToastMessage, ProductVariantDetail, ProductColorVariantDetail, ProductVariants, User } from './types';
 import { db, storage, auth } from './services/firebase';
-import { collection, doc, onSnapshot, setDoc, addDoc, query, runTransaction, deleteDoc, updateDoc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, setDoc, collection, addDoc, updateDoc, deleteDoc, runTransaction } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { onAuthStateChanged, signInWithEmailAndPassword, signOut, User as FirebaseUser, createUserWithEmailAndPassword } from 'firebase/auth';
+import { onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, User as FirebaseUser } from 'firebase/auth';
+
 import {
   CartIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, InstagramIcon, MenuIcon,
   SearchIcon, TikTokIcon, WhatsAppIcon, TrashIcon, PlusIcon, MinusIcon,
@@ -12,15 +13,15 @@ import {
 
 // --- MOCK DATA (Initial values for Firestore) ---
 const initialConfig: StoreConfig = {
-    logoUrl: 'https://i.imgur.com/JvA19tW.png',
+    logoUrl: 'https://i.ibb.co/3Y7f0fM/bombon-logo.png',
     contact: { name: 'Bombon Store', phone: '573001234567', schedule: 'Lunes a Sábado, 9am - 7pm' },
     social: { instagram: 'https://instagram.com', tiktok: 'https://tiktok.com', whatsapp: '573001234567' }
 };
 
 const initialBanners: Banner[] = [
-    { id: 1, imageUrl: 'https://i.imgur.com/8m2nJCr.jpeg', title: 'Colección Esencia', subtitle: 'Descubre tu estilo, define tu esencia.', link: '#productos' },
-    { id: 2, imageUrl: 'https://i.imgur.com/jBwDqA4.jpeg', title: 'Vibra con el Color', subtitle: 'Piezas únicas para un look inolvidable.', link: '#productos' },
-    { id: 3, imageUrl: 'https://i.imgur.com/1nL3y2A.jpeg', title: 'Pantalones con Estilo', subtitle: 'Comodidad y elegancia en cada paso.', link: 'category:Pantalones' }
+    { id: 1, imageUrl: 'https://i.ibb.co/tCg3r0X/banner1.jpg', title: 'Colección Esencia', subtitle: 'Descubre tu estilo, define tu esencia.', link: '#productos' },
+    { id: 2, imageUrl: 'https://i.ibb.co/FnyhY2j/banner2.jpg', title: 'Vibra con el Color', subtitle: 'Piezas únicas para un look inolvidable.', link: '#productos' },
+    { id: 3, imageUrl: 'https://i.ibb.co/P9M5dcD/banner3.jpg', title: 'Pantalones con Estilo', subtitle: 'Comodidad y elegancia en cada paso.', link: 'category:Pantalones' }
 ];
 
 const initialCategories: Category[] = ['Blusas', 'Vestidos', 'Pantalones', 'Accesorios', 'Chaquetas', 'Bolsos'];
@@ -28,18 +29,18 @@ const initialCategories: Category[] = ['Blusas', 'Vestidos', 'Pantalones', 'Acce
 const initialProducts: Product[] = [
     {
         id: 'prod1', name: 'Blusa de Seda "Aurora"', description: 'Elegante blusa de seda con un corte clásico y un tacto suave.',
-        price: 180000, category: 'Blusas', imageUrl: 'https://i.imgur.com/sT9c2Yd.jpeg', available: true,
+        price: 180000, category: 'Blusas', imageUrl: 'https://i.ibb.co/f2sN19v/blusa-rosa.jpg', available: true,
         variants: {
             hasSizes: true, sizes: { 'S': { available: true }, 'M': { available: true }, 'L': { available: false } },
             hasColors: true, colors: {
-                'Rosa Pastel': { available: true, imageUrl: 'https://i.imgur.com/sT9c2Yd.jpeg' },
-                'Blanco Crudo': { available: true, imageUrl: 'https://i.imgur.com/RJGt0zF.jpeg' }
+                'Rosa Pastel': { available: true, imageUrl: 'https://i.ibb.co/f2sN19v/blusa-rosa.jpg' },
+                'Blanco Crudo': { available: true, imageUrl: 'https://i.ibb.co/GvxB2SK/blusa-blanca.jpg' }
             }
         }
     },
     {
         id: 'prod2', name: 'Vestido "Verano Eterno"', description: 'Vestido floral perfecto para un día soleado, ligero y fresco.',
-        price: 250000, category: 'Vestidos', imageUrl: 'https://i.imgur.com/E13sYyO.jpeg', available: true,
+        price: 250000, category: 'Vestidos', imageUrl: 'https://i.ibb.co/jLDhQ8T/vestido-verano.jpg', available: true,
         variants: {
             hasSizes: true, sizes: { 'S': { available: true }, 'M': { available: true }, 'L': { available: true } },
             hasColors: false, colors: {}
@@ -47,29 +48,29 @@ const initialProducts: Product[] = [
     },
     {
         id: 'prod3', name: 'Pantalón Palazzo "Elegancia"', description: 'Pantalón de pierna ancha que estiliza la figura.',
-        price: 220000, category: 'Pantalones', imageUrl: 'https://i.imgur.com/1nL3y2A.jpeg', available: true,
+        price: 220000, category: 'Pantalones', imageUrl: 'https://i.ibb.co/jWw9y1J/pantalon-negro.jpg', available: true,
         variants: {
             hasSizes: true, sizes: { '34': { available: true }, '36': { available: true }, '38': { available: true } },
             hasColors: true, colors: {
-                'Negro': { available: true, imageUrl: 'https://i.imgur.com/1nL3y2A.jpeg' },
-                'Beige': { available: false, imageUrl: 'https://i.imgur.com/qEwV3nC.jpeg' }
+                'Negro': { available: true, imageUrl: 'https://i.ibb.co/jWw9y1J/pantalon-negro.jpg' },
+                'Beige': { available: false, imageUrl: 'https://i.ibb.co/vYJkKx6/pantalon-beige.jpg' }
             }
         }
     },
     {
         id: 'prod4', name: 'Bolso "Tote" de Cuero', description: 'Un bolso espacioso y chic para llevar todo lo que necesitas.',
-        price: 350000, category: 'Bolsos', imageUrl: 'https://i.imgur.com/AdA202F.jpeg', available: true,
+        price: 350000, category: 'Bolsos', imageUrl: 'https://i.ibb.co/WcWz30D/bolso-marron.jpg', available: true,
         variants: {
             hasSizes: false, sizes: {},
             hasColors: true, colors: {
-                'Marrón': { available: true, imageUrl: 'https://i.imgur.com/AdA202F.jpeg' },
-                'Negro': { available: true, imageUrl: 'https://i.imgur.com/YAnK9uq.jpeg' }
+                'Marrón': { available: true, imageUrl: 'https://i.ibb.co/WcWz30D/bolso-marron.jpg' },
+                'Negro': { available: true, imageUrl: 'https://i.ibb.co/PchL1P5/bolso-negro.jpg' }
             }
         }
     },
     {
         id: 'prod5', name: 'Falda Midi "Parisina"', description: 'Falda con pliegues y un estampado chic.',
-        price: 190000, category: 'Vestidos', imageUrl: 'https://i.imgur.com/Qk7a5xS.jpeg', available: false, // Out of stock
+        price: 190000, category: 'Vestidos', imageUrl: 'https://i.ibb.co/4T7vQd4/falda-midi.jpg', available: false, // Out of stock
         variants: {
             hasSizes: true, sizes: { 'S': { available: true }, 'M': { available: false } },
             hasColors: false, colors: {}
@@ -77,7 +78,7 @@ const initialProducts: Product[] = [
     },
     {
         id: 'prod6', name: 'Aretes "Gota de Oro"', description: 'Aretes delicados para un toque de brillo.',
-        price: 95000, category: 'Accesorios', imageUrl: 'https://i.imgur.com/J3cZJ8W.jpeg', available: true,
+        price: 95000, category: 'Accesorios', imageUrl: 'https://i.ibb.co/mBkwfV2/aretes-oro.jpg', available: true,
         variants: {
             hasSizes: false, sizes: {},
             hasColors: false, colors: {}
@@ -85,7 +86,7 @@ const initialProducts: Product[] = [
     },
     {
         id: 'prod7', name: 'Chaqueta Denim "Urbana"', description: 'Chaqueta de jean clásica, un básico indispensable.',
-        price: 280000, category: 'Chaquetas', imageUrl: 'https://i.imgur.com/tqB9z3g.jpeg', available: true,
+        price: 280000, category: 'Chaquetas', imageUrl: 'https://i.ibb.co/mGg8BMR/chaqueta-denim.jpg', available: true,
         variants: {
             hasSizes: true, sizes: { 'S': { available: true }, 'M': { available: true } },
             hasColors: false, colors: {}
@@ -93,7 +94,7 @@ const initialProducts: Product[] = [
     },
      {
         id: 'prod8', name: 'Top Corto de Lino', description: 'Top fresco y versátil, ideal para combinar.',
-        price: 130000, category: 'Blusas', imageUrl: 'https://i.imgur.com/hYkH5sN.jpeg', available: true,
+        price: 130000, category: 'Blusas', imageUrl: 'https://i.ibb.co/tYtK6B0/top-lino.jpg', available: true,
         variants: {
             hasSizes: true, sizes: { 'XS': { available: true }, 'S': { available: true }, 'M': { available: true } },
             hasColors: false, colors: {}
@@ -179,8 +180,7 @@ const useFirestoreCollectionSync = <T extends {docId: string}>(collectionName: s
     const collectionRef = useMemo(() => collection(db, collectionName), [collectionName]);
 
     useEffect(() => {
-        const q = query(collectionRef);
-        const unsubscribe = onSnapshot(q,
+        const unsubscribe = onSnapshot(collectionRef,
             (querySnapshot) => {
                 const items = querySnapshot.docs.map(doc => ({ ...doc.data(), docId: doc.id } as T));
                 setData(items);
@@ -406,7 +406,7 @@ const App: React.FC = () => {
                 const counterDoc = await transaction.get(orderCounterRef);
                 let nextNumber = 1001;
                 if (counterDoc.exists()) {
-                    nextNumber = counterDoc.data().currentNumber + 1;
+                    nextNumber = (counterDoc.data()?.currentNumber || 1000) + 1;
                 }
                 transaction.set(orderCounterRef, { currentNumber: nextNumber }, { merge: true });
                 return nextNumber;
@@ -464,6 +464,7 @@ const App: React.FC = () => {
         try {
             const userCredential = await createUserWithEmailAndPassword(auth, email, password);
             const user = userCredential.user;
+            if (!user) throw new Error("User creation failed.");
             await setDoc(doc(db, "users", user.uid), {
                 uid: user.uid,
                 email: user.email,
@@ -818,6 +819,7 @@ const LoginPage: React.FC<{
             try {
                 const userCredential = await createUserWithEmailAndPassword(auth, email, password);
                 const user = userCredential.user;
+                if (!user) throw new Error("Demo user creation failed.");
                 const role = email === 'admin@bombon.com' ? 'admin' : 'vendedor';
                 
                 await setDoc(doc(db, "users", user.uid), {
