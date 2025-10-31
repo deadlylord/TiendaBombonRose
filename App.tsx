@@ -225,6 +225,7 @@ const App: React.FC = () => {
     const [isCartOpen, setCartOpen] = useState(false);
     const [isAdminOpen, setAdminOpen] = useState(false);
     const [isInvoiceModalOpen, setInvoiceModalOpen] = useState(false);
+    const [isAddUserModalOpen, setAddUserModalOpen] = useState(false);
     const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
     const [productToEdit, setProductToEdit] = useState<Product | null>(null);
     const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -459,6 +460,32 @@ const App: React.FC = () => {
         }
     };
 
+    const handleCreateUser = async (email: string, password: string, role: User['role']) => {
+        try {
+            const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+            const user = userCredential.user;
+            await setDoc(doc(db, "users", user.uid), {
+                uid: user.uid,
+                email: user.email,
+                role: role
+            });
+            showToast("Usuario creado exitosamente.");
+            setAddUserModalOpen(false);
+        } catch (error: any) {
+            console.error("Error creating user:", error);
+            let errorMessage = "Error al crear el usuario.";
+            if (error.code === 'auth/email-already-in-use') {
+                errorMessage = "El correo electrónico ya está en uso.";
+            } else if (error.code === 'auth/weak-password') {
+                errorMessage = "La contraseña debe tener al menos 6 caracteres.";
+            } else if (error.code === 'auth/invalid-email') {
+                errorMessage = "El correo electrónico no es válido.";
+            }
+            showToast(errorMessage, "error");
+            throw error; // Rethrow to allow modal to handle loading state
+        }
+    };
+
     const handleUpdateUserRole = async (userDocId: string, newRole: User['role']) => {
         try {
             await updateDoc(doc(db, 'users', userDocId), { role: newRole });
@@ -595,6 +622,7 @@ const App: React.FC = () => {
                 onDeleteOrder={handleDeleteOrder}
                 onUpdateOrder={handleUpdateOrder}
                 onLogout={handleLogout}
+                onAddUser={() => setAddUserModalOpen(true)}
                 onUpdateUserRole={handleUpdateUserRole}
                 onDeleteUser={handleDeleteUser}
             />
@@ -658,6 +686,8 @@ const App: React.FC = () => {
             {renderAdminView()}
             {selectedProduct && <ProductDetailModal product={selectedProduct} onClose={() => setSelectedProduct(null)} onAddToCart={handleAddToCart} formatCurrency={formatCurrency} />}
             {isInvoiceModalOpen && <InvoiceModal setOpen={setInvoiceModalOpen} cart={cart} subtotal={cartSubtotal} onSubmitOrder={handleNewOrder} config={config} formatCurrency={formatCurrency} />}
+            {isAddUserModalOpen && <AddUserModal onClose={() => setAddUserModalOpen(false)} onCreateUser={handleCreateUser} />}
+
 
             <a
               href={`https://wa.me/${config.social.whatsapp}`}
@@ -673,6 +703,89 @@ const App: React.FC = () => {
 };
 
 // --- SUB-COMPONENTS ---
+
+const AddUserModal: React.FC<{
+    onClose: () => void;
+    onCreateUser: (email: string, password: string, role: User['role']) => Promise<void>;
+}> = ({ onClose, onCreateUser }) => {
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [role, setRole] = useState<User['role']>('vendedor');
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState('');
+    const emailInputRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => {
+      emailInputRef.current?.focus();
+    }, []);
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!email || !password) {
+            setError('Por favor, completa todos los campos.');
+            return;
+        }
+        setError('');
+        setIsLoading(true);
+        try {
+            await onCreateUser(email, password, role);
+            // The parent component will close the modal on success
+        } catch (err: any) {
+            setError(err.message || 'Ocurrió un error al crear el usuario.');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+    
+    return (
+        <div className="fixed inset-0 bg-black/60 z-[95] flex items-center justify-center p-4" onClick={onClose}>
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-sm relative" onClick={e => e.stopPropagation()}>
+                <button onClick={onClose} className="absolute top-2 right-2 p-2 text-gray-500 hover:text-gray-800">
+                    <CloseIcon className="w-6 h-6"/>
+                </button>
+                <form onSubmit={handleSubmit} className="p-8">
+                    <div className="text-center mb-6">
+                         <h2 className="text-2xl font-bold font-serif text-on-surface">Agregar Nuevo Usuario</h2>
+                         <p className="text-sm text-gray-600 mt-1">Crea una cuenta para un nuevo miembro del equipo.</p>
+                    </div>
+                    
+                    <div className="space-y-4">
+                        <AdminInput
+                            ref={emailInputRef}
+                            label="Correo Electrónico" 
+                            type="email" 
+                            value={email}
+                            onChange={e => setEmail(e.target.value)}
+                            required
+                        />
+                        <AdminInput
+                            label="Contraseña Temporal" 
+                            type="password" 
+                            value={password}
+                            onChange={e => setPassword(e.target.value)}
+                            required
+                            placeholder="Mínimo 6 caracteres"
+                        />
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Rol</label>
+                            <select value={role} onChange={(e) => setRole(e.target.value as User['role'])} className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary sm:text-sm">
+                                <option value="vendedor">Vendedor</option>
+                                <option value="admin">Administrador</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    {error && <p className="text-red-500 text-sm mt-4 text-center w-full">{error}</p>}
+                    
+                    <button type="submit" disabled={isLoading} className="mt-6 w-full bg-primary text-white py-2 rounded-md hover:bg-primary-dark transition-colors disabled:bg-primary-light disabled:cursor-wait">
+                        {isLoading ? 'Creando...' : 'Crear Usuario'}
+                    </button>
+                </form>
+            </div>
+        </div>
+    );
+};
+
 
 const LoginPage: React.FC<{
   onClose: () => void;
@@ -1286,6 +1399,7 @@ interface AdminPanelProps {
     onDeleteOrder: (orderDocId: string) => void;
     onUpdateOrder: (orderDocId: string, data: Partial<Order>) => void;
     onLogout: () => void;
+    onAddUser: () => void;
     onUpdateUserRole: (userDocId: string, newRole: User['role']) => void;
     onDeleteUser: (userDocId: string) => void;
 }
@@ -1296,7 +1410,7 @@ const AdminPanel: React.FC<AdminPanelProps> = (props) => {
         onUpdateConfig, onSaveBanners, onSaveCategories,
         onAddProduct, onUpdateProduct, onDeleteProduct,
         formatCurrency, productToEdit, onDeleteOrder, onUpdateOrder,
-        onLogout, onUpdateUserRole, onDeleteUser
+        onLogout, onAddUser, onUpdateUserRole, onDeleteUser
     } = props;
     
     const isAdmin = user.role === 'admin';
@@ -1403,6 +1517,7 @@ const AdminPanel: React.FC<AdminPanelProps> = (props) => {
             case 'Usuarios':
                 return isAdmin ? <AdminUsersTab 
                             users={props.store.users}
+                            onAdd={onAddUser}
                             onUpdateRole={onUpdateUserRole}
                             onDelete={onDeleteUser}
                             currentUserId={user.uid}
@@ -1604,13 +1719,17 @@ const AdminGeneralTab: React.FC<{config: StoreConfig, onSave: (c: StoreConfig) =
 
 const AdminUsersTab: React.FC<{
     users: User[];
+    onAdd: () => void;
     onUpdateRole: (docId: string, newRole: User['role']) => void;
     onDelete: (docId: string) => void;
     currentUserId: string;
-}> = ({ users, onUpdateRole, onDelete, currentUserId }) => {
+}> = ({ users, onAdd, onUpdateRole, onDelete, currentUserId }) => {
     return (
         <div className="p-6">
-            <h1 className="text-2xl font-bold mb-6">Gestionar Usuarios</h1>
+             <div className="flex justify-between items-center mb-6">
+                <h1 className="text-2xl font-bold">Gestionar Usuarios</h1>
+                <button onClick={onAdd} className="bg-primary text-white px-4 py-2 rounded-md hover:bg-primary-dark">Agregar Usuario</button>
+            </div>
             <div className="bg-white rounded-lg shadow overflow-hidden">
                 <table className="w-full">
                     <thead className="bg-gray-50">
