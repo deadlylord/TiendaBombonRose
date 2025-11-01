@@ -51,6 +51,7 @@ export interface StoreConfig {
   logoUrl: string;
   contact: ContactInfo;
   social: SocialLinks;
+  paymentMethodsImageUrl?: string;
 }
 
 export interface CartItem {

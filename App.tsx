@@ -15,7 +15,8 @@ import {
 const initialConfig: StoreConfig = {
     logoUrl: 'https://i.ibb.co/3Y7f0fM/bombon-logo.png',
     contact: { name: 'Bombon Store', phone: '573001234567', schedule: 'Lunes a Sábado, 9am - 7pm' },
-    social: { instagram: 'https://instagram.com', tiktok: 'https://tiktok.com', whatsapp: '573001234567' }
+    social: { instagram: 'https://instagram.com', tiktok: 'https://tiktok.com', whatsapp: '573001234567' },
+    paymentMethodsImageUrl: 'https://i.ibb.co/QPDWf6s/medios-de-pago.png'
 };
 
 const initialBanners: Banner[] = [
@@ -531,7 +532,7 @@ const App: React.FC = () => {
         return (
             <div className="flex items-center justify-center h-screen bg-background">
                 <div className="flex flex-col items-center">
-                   <svg className="animate-spin h-10 w-10 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                   <svg className="animate-spin h-10 w-10 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 2000/svg">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
@@ -622,7 +623,7 @@ const App: React.FC = () => {
         if (isAuthLoading) {
              return (
                 <div className="fixed inset-0 bg-black/60 z-[90] flex items-center justify-center">
-                    <svg className="animate-spin h-10 w-10 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <svg className="animate-spin h-10 w-10 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 2000/svg">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
@@ -719,7 +720,7 @@ const App: React.FC = () => {
             
             <Footer contact={config.contact} social={config.social} onAdminClick={() => setAdminOpen(true)} />
 
-            {isCartOpen && <CartPanel setOpen={setCartOpen} cart={cart} subtotal={cartSubtotal} onUpdateQuantity={handleUpdateCartQuantity} onRemoveItem={handleRemoveFromCart} onCheckout={() => { setCartOpen(false); setInvoiceModalOpen(true); }} formatCurrency={formatCurrency} suggestedProducts={bestSellers} onAddSuggestedProduct={handleQuickAddToCart} />}
+            {isCartOpen && <CartPanel setOpen={setCartOpen} cart={cart} subtotal={cartSubtotal} onUpdateQuantity={handleUpdateCartQuantity} onRemoveItem={handleRemoveFromCart} onCheckout={() => { setCartOpen(false); setInvoiceModalOpen(true); }} formatCurrency={formatCurrency} suggestedProducts={bestSellers} onAddSuggestedProduct={handleQuickAddToCart} paymentMethodsImageUrl={config.paymentMethodsImageUrl} />}
             {renderAdminView()}
             {selectedProduct && <ProductDetailModal product={selectedProduct} onClose={() => setSelectedProduct(null)} onAddToCart={handleAddToCart} formatCurrency={formatCurrency} />}
             {isInvoiceModalOpen && <InvoiceModal setOpen={setInvoiceModalOpen} cart={cart} subtotal={cartSubtotal} onSubmitOrder={handleNewOrder} config={config} formatCurrency={formatCurrency} />}
@@ -1111,19 +1112,12 @@ const CartPanel: React.FC<{
     onCheckout: () => void,
     formatCurrency: (amount: number) => string,
     suggestedProducts: Product[],
-    onAddSuggestedProduct: (product: Product) => void
-}> = ({ setOpen, cart, subtotal, onUpdateQuantity, onRemoveItem, onCheckout, formatCurrency, suggestedProducts, onAddSuggestedProduct }) => {
+    onAddSuggestedProduct: (product: Product) => void,
+    paymentMethodsImageUrl?: string
+}> = ({ setOpen, cart, subtotal, onUpdateQuantity, onRemoveItem, onCheckout, formatCurrency, suggestedProducts, onAddSuggestedProduct, paymentMethodsImageUrl }) => {
     const FREE_SHIPPING_THRESHOLD = 150000;
     const missingForFreeShipping = Math.max(0, FREE_SHIPPING_THRESHOLD - subtotal);
     const progressPercentage = Math.min(100, (subtotal / FREE_SHIPPING_THRESHOLD) * 100);
-
-    const paymentMethods = [
-        { name: 'Nequi', logoUrl: 'https://i.ibb.co/xJ36s12/nequi-logo.png' },
-        { name: 'Daviplata', logoUrl: 'https://i.ibb.co/P9p2zY5/daviplata-logo.png' },
-        { name: 'Tarjetas', logoUrl: 'https://i.ibb.co/sKj2v0t/tarjetas-logo.png' },
-        { name: 'Addi', logoUrl: 'https://i.ibb.co/8YfKz8V/addi-logo.png' },
-        { name: 'Sistecredito', logoUrl: 'https://i.ibb.co/z5ZvxB1/sistecredito-logo.png' },
-    ];
     
     const finalSuggestions = useMemo(() => {
         const cartProductIds = new Set(cart.map(item => item.productId));
@@ -1210,15 +1204,16 @@ const CartPanel: React.FC<{
                         </button>
                         <div className="text-center pt-2">
                             <p className="text-xs text-gray-500 mb-2">Medios de pago seguros</p>
-                            <div className="flex justify-center items-center space-x-4">
-                                {paymentMethods.map(method => (
+                            <div className="flex justify-center items-center">
+                                {paymentMethodsImageUrl ? (
                                     <img 
-                                        key={method.name} 
-                                        src={method.logoUrl} 
-                                        alt={method.name} 
-                                        className="h-6 object-contain grayscale hover:grayscale-0 transition-all"
+                                        src={paymentMethodsImageUrl} 
+                                        alt="Medios de pago aceptados" 
+                                        className="h-auto w-full max-w-xs object-contain"
                                     />
-                                ))}
+                                ) : (
+                                    <p className="text-xs text-gray-400 text-center">Configura la imagen de pagos en el panel de admin.</p>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -1903,6 +1898,11 @@ const AdminGeneralTab: React.FC<{config: StoreConfig, onSave: (c: StoreConfig) =
             <h1 className="text-2xl font-bold mb-6">Configuración General</h1>
             <div className="bg-white rounded-lg shadow p-6 max-w-2xl space-y-6">
                 <ImageUpload label="Logo de la Tienda" currentImage={localConfig.logoUrl} onImageSelect={url => setLocalConfig({...localConfig, logoUrl: url})} />
+                <ImageUpload 
+                    label="Imagen de Medios de Pago (Carrito)" 
+                    currentImage={localConfig.paymentMethodsImageUrl || ''} 
+                    onImageSelect={url => setLocalConfig({...localConfig, paymentMethodsImageUrl: url})} 
+                />
                 <AdminInput label="Nombre de la Tienda" value={localConfig.contact.name} onChange={e => setLocalConfig({...localConfig, contact: {...localConfig.contact, name: e.target.value}})} />
                 <AdminInput label="Teléfono de Contacto" value={localConfig.contact.phone} onChange={e => setLocalConfig({...localConfig, contact: {...localConfig.contact, phone: e.target.value}})} />
                 <AdminInput label="Horario" value={localConfig.contact.schedule} onChange={e => setLocalConfig({...localConfig, contact: {...localConfig.contact, schedule: e.target.value}})} />
