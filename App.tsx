@@ -921,10 +921,6 @@ const LoginPage: React.FC<{
             <button type="submit" disabled={isLoading} className="mt-6 w-full bg-primary text-white py-2 rounded-md hover:bg-primary-dark transition-colors disabled:bg-primary-light disabled:cursor-wait">
                 {isLoading ? 'Ingresando...' : 'Entrar'}
             </button>
-            <div className="text-center mt-4">
-                <p className="text-xs text-gray-500">Admin: admin@bombon.com / bombon123</p>
-                <p className="text-xs text-gray-500">Vendedor: vendedor@bombon.com / bombon123</p>
-            </div>
         </form>
       </div>
     </div>
