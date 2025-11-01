@@ -370,11 +370,21 @@ const App: React.FC = () => {
         }
     }, [isAdminOpen]);
 
-    const handleNavigateToCategory = (category: Category | 'All') => {
+    const handleNavigateToCategory = (e: React.MouseEvent<HTMLAnchorElement>, category: Category | 'All') => {
+        e.preventDefault();
+        setSelectedCategory(category);
+        setMobileMenuOpen(false);
+        const element = document.getElementById('productos');
+        if (element) {
+            element.scrollIntoView({ behavior: 'smooth' });
+        }
+    };
+    
+    const handleCategoryButtonClick = (category: Category | 'All') => {
       setSelectedCategory(category);
-      setMobileMenuOpen(false);
       const element = document.getElementById('productos');
       if (element) {
+        // A slight delay might help if there are rendering issues, but smooth is better
         element.scrollIntoView({ behavior: 'smooth' });
       }
     };
@@ -661,16 +671,17 @@ const App: React.FC = () => {
                 setMobileMenuOpen={setMobileMenuOpen}
                 categories={categories}
                 onSelectCategory={handleNavigateToCategory}
+                selectedCategory={selectedCategory}
             />
             
             <CategoryNav
               categories={categories}
               selectedCategory={selectedCategory}
-              onSelectCategory={handleNavigateToCategory}
+              onSelectCategory={handleCategoryButtonClick}
             />
 
             <main className="pt-12">
-                <BannerCarousel banners={banners} onNavigateToCategory={handleNavigateToCategory} />
+                <BannerCarousel banners={banners} onNavigateToCategory={(cat) => handleCategoryButtonClick(cat as Category)} />
                 
                 {selectedCategory === 'All' && (
                   <>
@@ -708,7 +719,7 @@ const App: React.FC = () => {
             
             <Footer contact={config.contact} social={config.social} onAdminClick={() => setAdminOpen(true)} />
 
-            {isCartOpen && <CartPanel setOpen={setCartOpen} cart={cart} subtotal={cartSubtotal} onUpdateQuantity={handleUpdateCartQuantity} onRemoveItem={handleRemoveFromCart} onCheckout={() => { setCartOpen(false); setInvoiceModalOpen(true); }} formatCurrency={formatCurrency}/>}
+            {isCartOpen && <CartPanel setOpen={setCartOpen} cart={cart} subtotal={cartSubtotal} onUpdateQuantity={handleUpdateCartQuantity} onRemoveItem={handleRemoveFromCart} onCheckout={() => { setCartOpen(false); setInvoiceModalOpen(true); }} formatCurrency={formatCurrency} suggestedProducts={bestSellers} onAddSuggestedProduct={handleQuickAddToCart} />}
             {renderAdminView()}
             {selectedProduct && <ProductDetailModal product={selectedProduct} onClose={() => setSelectedProduct(null)} onAddToCart={handleAddToCart} formatCurrency={formatCurrency} />}
             {isInvoiceModalOpen && <InvoiceModal setOpen={setInvoiceModalOpen} cart={cart} subtotal={cartSubtotal} onSubmitOrder={handleNewOrder} config={config} formatCurrency={formatCurrency} />}
@@ -922,48 +933,85 @@ const LoginPage: React.FC<{
 const Header: React.FC<{
     logoUrl: string, cartItemCount: number, onCartClick: () => void,
     isMobileMenuOpen: boolean, setMobileMenuOpen: (isOpen: boolean) => void,
-    categories: Category[], onSelectCategory: (category: Category | 'All') => void
-}> = ({ logoUrl, cartItemCount, onCartClick, isMobileMenuOpen, setMobileMenuOpen, categories, onSelectCategory }) => {
+    categories: Category[], onSelectCategory: (e: React.MouseEvent<HTMLAnchorElement>, category: Category | 'All') => void,
+    selectedCategory: string
+}> = ({ logoUrl, cartItemCount, onCartClick, isMobileMenuOpen, setMobileMenuOpen, categories, onSelectCategory, selectedCategory }) => {
     
+    const baseLinkClasses = 'block text-lg px-4 py-3 rounded-md transition-colors';
+    const activeLinkClasses = 'bg-pink-100 text-primary font-semibold';
+    const inactiveLinkClasses = 'hover:bg-pink-100 hover:text-primary';
+
+    const handleContactClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+        e.preventDefault();
+        setMobileMenuOpen(false);
+        const contactElement = document.getElementById('contacto');
+        if (contactElement) {
+            contactElement.scrollIntoView({ behavior: 'smooth' });
+        }
+    };
+
     return (
-        <header className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-sm shadow-md h-20">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-full">
-                <div className="flex items-center justify-between h-full">
-                    <div className="flex-1 flex justify-start">
-                        <button className="md:hidden text-on-surface" onClick={() => setMobileMenuOpen(true)}>
-                            <MenuIcon className="w-6 h-6" />
-                        </button>
-                    </div>
+        <>
+            <header className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-sm shadow-md h-20">
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-full">
+                    <div className="flex items-center justify-between h-full">
+                        <div className="flex-1 flex justify-start">
+                            <button className="md:hidden text-on-surface" onClick={() => setMobileMenuOpen(true)}>
+                                <MenuIcon className="w-6 h-6" />
+                            </button>
+                        </div>
 
-                    <div className="flex-shrink-0">
-                        <img src={logoUrl} alt="Bombon Logo" className="h-14 w-auto" />
-                    </div>
+                        <div className="flex-shrink-0">
+                            <img src={logoUrl} alt="Bombon Logo" className="h-14 w-auto" />
+                        </div>
 
-                    <div className="flex-1 flex justify-end">
-                        <button onClick={onCartClick} className="relative text-on-surface hover:text-primary p-2">
-                            <CartIcon className="w-6 h-6" />
-                            {cartItemCount > 0 && <span className="absolute -top-1 -right-1 bg-primary text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">{cartItemCount}</span>}
-                        </button>
+                        <div className="flex-1 flex justify-end">
+                            <button onClick={onCartClick} className="relative text-on-surface hover:text-primary p-2">
+                                <CartIcon className="w-6 h-6" />
+                                {cartItemCount > 0 && <span className="absolute -top-1 -right-1 bg-primary text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">{cartItemCount}</span>}
+                            </button>
+                        </div>
                     </div>
                 </div>
+            </header>
+
+            {/* Mobile Menu Overlay */}
+            <div 
+                className={`fixed inset-0 bg-black/60 z-[55] transition-opacity duration-300 ease-in-out ${isMobileMenuOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+                onClick={() => setMobileMenuOpen(false)}
+                aria-hidden={!isMobileMenuOpen}
+            />
+            
+            {/* Mobile Menu Panel */}
+            <div 
+                className={`fixed top-0 left-0 h-full w-80 max-w-[80vw] bg-white shadow-xl flex flex-col z-[60] transition-transform duration-300 ease-in-out ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="mobile-menu-title"
+            >
+                <div className="flex justify-between items-center p-4 border-b">
+                    <img src={logoUrl} alt="Bombon Logo" className="h-10 w-auto" id="mobile-menu-title" />
+                    <button onClick={() => setMobileMenuOpen(false)} className="p-2 text-on-surface rounded-full hover:bg-gray-100" aria-label="Cerrar menú">
+                        <CloseIcon className="w-6 h-6" />
+                    </button>
+                </div>
+                <nav className="flex-grow p-4 flex flex-col space-y-1 overflow-y-auto">
+                    <h3 className="font-semibold px-4 mb-2 text-gray-500 text-sm uppercase tracking-wider">Categorías</h3>
+                    <a href="#productos" onClick={(e) => onSelectCategory(e, 'All')} className={`${baseLinkClasses} ${selectedCategory === 'All' ? activeLinkClasses : inactiveLinkClasses}`}>
+                        Todas
+                    </a>
+                    {(categories || []).map(cat => (
+                        <a key={cat} href="#productos" onClick={(e) => onSelectCategory(e, cat)} className={`${baseLinkClasses} ${selectedCategory === cat ? activeLinkClasses : inactiveLinkClasses}`}>
+                            {cat}
+                        </a>
+                    ))}
+                    <div className="border-t my-4"></div>
+                    <a href="#contacto" onClick={handleContactClick} className="block text-lg px-4 py-3 rounded-md hover:bg-pink-100 hover:text-primary transition-colors">
+                        Contacto
+                    </a>
+                </nav>
             </div>
-            {isMobileMenuOpen && (
-                <div className="fixed inset-0 bg-black/50 z-50" onClick={() => setMobileMenuOpen(false)}>
-                    <div className="fixed top-0 left-0 h-full w-72 bg-surface shadow-xl p-5" onClick={e => e.stopPropagation()}>
-                        <button onClick={() => setMobileMenuOpen(false)} className="absolute top-4 right-4 text-on-surface"><CloseIcon className="w-6 h-6" /></button>
-                         <img src={logoUrl} alt="Bombon Logo" className="h-10 w-auto mb-8" />
-                        <nav className="mt-8 flex flex-col space-y-2">
-                            <h3 className="font-semibold px-4 mb-2">Categorías</h3>
-                            <a href="#productos" onClick={() => onSelectCategory('All')} className="block px-4 py-2 rounded-md hover:bg-gray-100">Todas</a>
-                            {(categories || []).map(cat => (
-                                <a key={cat} href="#productos" onClick={() => onSelectCategory(cat)} className="block px-4 py-2 rounded-md hover:bg-gray-100">{cat}</a>
-                            ))}
-                            <a href="#contacto" onClick={() => setMobileMenuOpen(false)} className="block px-4 py-2 rounded-md hover:bg-gray-100 mt-4">Contacto</a>
-                        </nav>
-                    </div>
-                </div>
-            )}
-        </header>
+        </>
     );
 };
 
@@ -1055,13 +1103,32 @@ const BannerCarousel: React.FC<{ banners: Banner[]; onNavigateToCategory: (categ
 };
 
 const CartPanel: React.FC<{
-    setOpen: (isOpen: boolean) => void, cart: CartItem[], subtotal: number,
-    onUpdateQuantity: (id: string, qty: number) => void, onRemoveItem: (id: string) => void,
-    onCheckout: () => void, formatCurrency: (amount: number) => string
-}> = ({ setOpen, cart, subtotal, onUpdateQuantity, onRemoveItem, onCheckout, formatCurrency }) => {
+    setOpen: (isOpen: boolean) => void,
+    cart: CartItem[],
+    subtotal: number,
+    onUpdateQuantity: (id: string, qty: number) => void,
+    onRemoveItem: (id: string) => void,
+    onCheckout: () => void,
+    formatCurrency: (amount: number) => string,
+    suggestedProducts: Product[],
+    onAddSuggestedProduct: (product: Product) => void
+}> = ({ setOpen, cart, subtotal, onUpdateQuantity, onRemoveItem, onCheckout, formatCurrency, suggestedProducts, onAddSuggestedProduct }) => {
     const FREE_SHIPPING_THRESHOLD = 150000;
     const missingForFreeShipping = Math.max(0, FREE_SHIPPING_THRESHOLD - subtotal);
     const progressPercentage = Math.min(100, (subtotal / FREE_SHIPPING_THRESHOLD) * 100);
+
+    const paymentMethods = [
+        { name: 'Nequi', logoUrl: 'https://i.ibb.co/xJ36s12/nequi-logo.png' },
+        { name: 'Daviplata', logoUrl: 'https://i.ibb.co/P9p2zY5/daviplata-logo.png' },
+        { name: 'Tarjetas', logoUrl: 'https://i.ibb.co/sKj2v0t/tarjetas-logo.png' },
+        { name: 'Addi', logoUrl: 'https://i.ibb.co/8YfKz8V/addi-logo.png' },
+        { name: 'Sistecredito', logoUrl: 'https://i.ibb.co/z5ZvxB1/sistecredito-logo.png' },
+    ];
+    
+    const finalSuggestions = useMemo(() => {
+        const cartProductIds = new Set(cart.map(item => item.productId));
+        return suggestedProducts.filter(p => !cartProductIds.has(p.id)).slice(0, 3);
+    }, [cart, suggestedProducts]);
 
     return (
         <div className="fixed inset-0 bg-black/60 z-[60]" onClick={() => setOpen(false)}>
@@ -1098,6 +1165,31 @@ const CartPanel: React.FC<{
                             </div>
                         ))}
                     </div>
+                    
+                    {finalSuggestions.length > 0 && (
+                        <div className="p-4 border-t bg-surface">
+                            <h3 className="font-semibold text-sm mb-3">Completa tu look</h3>
+                            <div className="space-y-3">
+                                {finalSuggestions.map(product => (
+                                    <div key={product.id} className="flex items-center space-x-3">
+                                        <img src={product.imageUrl} alt={product.name} className="w-14 h-16 object-cover rounded-md flex-shrink-0" />
+                                        <div className="flex-grow overflow-hidden">
+                                            <p className="text-sm font-medium truncate">{product.name}</p>
+                                            <p className="text-sm text-primary font-bold">{formatCurrency(product.price)}</p>
+                                        </div>
+                                        <button
+                                            onClick={() => onAddSuggestedProduct(product)}
+                                            className="bg-pink-100 text-primary rounded-full p-2 hover:bg-primary hover:text-white transition-colors flex-shrink-0"
+                                            aria-label={`Agregar ${product.name} al carrito`}
+                                        >
+                                            <PlusIcon className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
                     <div className="p-4 border-t space-y-4 bg-surface">
                          <div className="w-full">
                             <div className="bg-gray-200 rounded-full h-2.5 mb-1">
@@ -1116,6 +1208,19 @@ const CartPanel: React.FC<{
                         <button onClick={onCheckout} className="w-full bg-primary text-white py-3 rounded-md hover:bg-primary-dark transition-colors font-semibold">
                             Finalizar Compra
                         </button>
+                        <div className="text-center pt-2">
+                            <p className="text-xs text-gray-500 mb-2">Medios de pago seguros</p>
+                            <div className="flex justify-center items-center space-x-4">
+                                {paymentMethods.map(method => (
+                                    <img 
+                                        key={method.name} 
+                                        src={method.logoUrl} 
+                                        alt={method.name} 
+                                        className="h-6 object-contain grayscale hover:grayscale-0 transition-all"
+                                    />
+                                ))}
+                            </div>
+                        </div>
                     </div>
                     </>
                 )}
