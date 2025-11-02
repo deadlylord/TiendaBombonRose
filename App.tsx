@@ -238,11 +238,17 @@ const App: React.FC = () => {
     // Search & Filter State
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedCategory, setSelectedCategory] = useState<Category | 'All' | 'On Sale'>('All');
+    const [inlineSearchTerm, setInlineSearchTerm] = useState('');
 
     // Admin State
     const [editMode, setEditMode] = useState(false);
     
     const isAppLoading = isConfigLoading || areBannersLoading || areProductsLoading || areCategoriesLoading || areOrdersLoading || isAuthLoading || areUsersLoading;
+
+    // Sync global search term to inline search input
+    useEffect(() => {
+        setInlineSearchTerm(searchTerm);
+    }, [searchTerm]);
     
     // --- BROWSER HISTORY / BACK BUTTON MODAL HANDLING ---
     const modalHistoryActive = useRef(false);
@@ -362,7 +368,23 @@ const App: React.FC = () => {
                 matchesCategory = product.category === selectedCategory;
             }
             
-            const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase());
+            const searchTermClean = searchTerm.trim().toLowerCase();
+            if (!searchTermClean) {
+                // If no search term, only filter by category
+                return matchesCategory;
+            }
+
+            const searchWords = searchTermClean.split(/\s+/).filter(Boolean);
+            
+            const searchableText = `
+                ${product.name} 
+                ${product.description} 
+                ${product.category}`
+            .toLowerCase();
+            
+            // All search words must be present in the searchable text
+            const matchesSearch = searchWords.every(word => searchableText.includes(word));
+            
             return matchesCategory && matchesSearch;
         });
     }, [products, selectedCategory, searchTerm]);
@@ -493,9 +515,11 @@ const App: React.FC = () => {
       }
     };
     
-    const handleSearchAndNavigate = (term: string = '', category: Category | 'All' | 'On Sale' = 'All') => {
+    const handleSearchAndNavigate = (term: string, category?: Category | 'All' | 'On Sale') => {
         setSearchTerm(term);
-        setSelectedCategory(category);
+        if (category !== undefined) {
+            setSelectedCategory(category);
+        }
         closeModal();
         const element = document.getElementById('productos');
         if (element) {
@@ -813,16 +837,24 @@ const App: React.FC = () => {
                            {selectedCategory === 'All' ? 'Todo Nuestro Catálogo' : selectedCategory}
                         </h2>
                          <div className="flex justify-center mb-8">
-                            <div className="relative w-full md:w-1/2">
-                               <input 
-                                   type="text" 
-                                   placeholder="Buscar productos por nombre..." 
-                                   value={searchTerm}
-                                   onChange={e => setSearchTerm(e.target.value)}
-                                   className="w-full bg-white border border-gray-300 rounded-full pl-10 pr-4 py-2 focus:ring-2 focus:ring-primary focus:border-primary"
-                                />
-                               <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                           </div>
+                            <form
+                                className="w-full md:w-1/2"
+                                onSubmit={(e) => {
+                                    e.preventDefault();
+                                    handleSearchAndNavigate(inlineSearchTerm);
+                                }}
+                            >
+                               <div className="relative w-full">
+                                   <input 
+                                       type="text" 
+                                       placeholder="Buscar productos por nombre..." 
+                                       value={inlineSearchTerm}
+                                       onChange={e => setInlineSearchTerm(e.target.value)}
+                                       className="w-full bg-white border border-gray-300 rounded-full pl-10 pr-4 py-2 focus:ring-2 focus:ring-primary focus:border-primary"
+                                    />
+                                   <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                               </div>
+                            </form>
                         </div>
 
                         <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 md:gap-6">
