@@ -232,8 +232,6 @@ const App: React.FC = () => {
     const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
     const [productToEdit, setProductToEdit] = useState<Product | null>(null);
     const [toasts, setToasts] = useState<ToastMessage[]>([]);
-    const selectedProductRef = useRef<Product | null>(null);
-    selectedProductRef.current = selectedProduct;
     
     // Search & Filter State
     const [searchTerm, setSearchTerm] = useState('');
@@ -243,12 +241,19 @@ const App: React.FC = () => {
     const [editMode, setEditMode] = useState(false);
     
     const isAppLoading = isConfigLoading || areBannersLoading || areProductsLoading || areCategoriesLoading || areOrdersLoading || isAuthLoading || areUsersLoading;
-
+    
     // --- BROWSER HISTORY / BACK BUTTON MODAL HANDLING ---
+    const modalHistoryActive = useRef(false);
+
     useEffect(() => {
         const handlePopState = () => {
-            if (selectedProductRef.current) {
+            if (modalHistoryActive.current) {
                 setSelectedProduct(null);
+                setCartOpen(false);
+                setAdminOpen(false);
+                setInvoiceModalOpen(false);
+                setAddUserModalOpen(false);
+                modalHistoryActive.current = false;
             }
         };
         window.addEventListener('popstate', handlePopState);
@@ -256,6 +261,39 @@ const App: React.FC = () => {
             window.removeEventListener('popstate', handlePopState);
         };
     }, []);
+
+    const closeModal = () => {
+        if (modalHistoryActive.current) {
+            window.history.back();
+        } else {
+            setSelectedProduct(null);
+            setCartOpen(false);
+            setAdminOpen(false);
+            setInvoiceModalOpen(false);
+            setAddUserModalOpen(false);
+        }
+    };
+
+    const openPrimaryModal = (setter: React.Dispatch<React.SetStateAction<any>>, value: any) => {
+        if (!modalHistoryActive.current) {
+            window.history.pushState({ modal: true }, '');
+            modalHistoryActive.current = true;
+        }
+        setter(value);
+    };
+
+    const handleOpenProductDetails = (product: Product) => {
+        openPrimaryModal(setSelectedProduct, product);
+    };
+
+    const handleOpenCart = () => {
+        openPrimaryModal(setCartOpen, true);
+    };
+
+    const handleOpenAdmin = () => {
+        openPrimaryModal(setAdminOpen, true);
+    };
+
 
     // --- AUTH EFFECT ---
     useEffect(() => {
@@ -345,21 +383,9 @@ const App: React.FC = () => {
         }
         showToast(`${product.name} agregado al carrito!`);
         setSelectedProduct(null);
+        if (modalHistoryActive.current) window.history.back();
     };
     
-    const handleOpenProductDetails = (product: Product) => {
-        window.history.pushState({ modal: 'product' }, '');
-        setSelectedProduct(product);
-    };
-
-    const handleCloseProductModal = () => {
-        if (window.history.state?.modal === 'product') {
-            window.history.back();
-        } else {
-            setSelectedProduct(null);
-        }
-    };
-
     const handleQuickAddToCart = (product: Product) => {
       const hasDefinedSizes = !!(product.variants?.hasSizes && product.variants.sizes && Object.keys(product.variants.sizes).length > 0);
       const hasDefinedColors = !!(product.variants?.hasColors && product.variants.colors && Object.keys(product.variants.colors).length > 0);
@@ -386,7 +412,7 @@ const App: React.FC = () => {
     
     const handleOpenProductEdit = (product: Product) => {
         setProductToEdit(product);
-        setAdminOpen(true);
+        handleOpenAdmin();
     };
     
     useEffect(() => {
@@ -470,7 +496,7 @@ const App: React.FC = () => {
             await addDoc(collection(db, 'orders'), newOrder);
 
             setCart([]);
-            setInvoiceModalOpen(false);
+            closeModal();
             showToast("¡Pedido enviado por WhatsApp!");
 
         } catch (error) {
@@ -656,13 +682,13 @@ const App: React.FC = () => {
         }
 
         if (!currentUser || !userData) {
-            return <LoginPage showToast={showToast} onClose={() => setAdminOpen(false)} />;
+            return <LoginPage showToast={showToast} onClose={closeModal} />;
         }
         
         return (
             <AdminPanel
                 user={userData}
-                setOpen={setAdminOpen}
+                onClose={closeModal}
                 editMode={editMode}
                 setEditMode={setEditMode}
                 store={{ config, banners, products, categories, orders, users }}
@@ -691,14 +717,14 @@ const App: React.FC = () => {
             <Header
                 logoUrl={config.logoUrl}
                 cartItemCount={cartItemCount}
-                onCartClick={() => setCartOpen(true)}
+                onCartClick={handleOpenCart}
                 isMobileMenuOpen={isMobileMenuOpen}
                 setMobileMenuOpen={setMobileMenuOpen}
                 categories={categories}
                 onSelectCategory={handleNavigateToCategory}
                 selectedCategory={selectedCategory}
                 currentUser={currentUser}
-                onAdminClick={() => setAdminOpen(true)}
+                onAdminClick={handleOpenAdmin}
             />
             
             <CategoryNav
@@ -744,12 +770,12 @@ const App: React.FC = () => {
                 
             </main>
             
-            <Footer contact={config.contact} social={config.social} onAdminClick={() => setAdminOpen(true)} />
+            <Footer contact={config.contact} social={config.social} onAdminClick={handleOpenAdmin} />
 
-            {isCartOpen && <CartPanel setOpen={setCartOpen} cart={cart} subtotal={cartSubtotal} onUpdateQuantity={handleUpdateCartQuantity} onRemoveItem={handleRemoveFromCart} onCheckout={() => { setCartOpen(false); setInvoiceModalOpen(true); }} formatCurrency={formatCurrency} suggestedProducts={bestSellers} onAddSuggestedProduct={handleQuickAddToCart} paymentMethodsImageUrl={config.paymentMethodsImageUrl} />}
+            {isCartOpen && <CartPanel onClose={closeModal} cart={cart} subtotal={cartSubtotal} onUpdateQuantity={handleUpdateCartQuantity} onRemoveItem={handleRemoveFromCart} onCheckout={() => { setCartOpen(false); setInvoiceModalOpen(true); }} formatCurrency={formatCurrency} suggestedProducts={bestSellers} onAddSuggestedProduct={handleQuickAddToCart} paymentMethodsImageUrl={config.paymentMethodsImageUrl} />}
             {renderAdminView()}
-            {selectedProduct && <ProductDetailModal product={selectedProduct} onClose={handleCloseProductModal} onAddToCart={handleAddToCart} formatCurrency={formatCurrency} />}
-            {isInvoiceModalOpen && <InvoiceModal setOpen={setInvoiceModalOpen} cart={cart} subtotal={cartSubtotal} onSubmitOrder={handleNewOrder} config={config} formatCurrency={formatCurrency} />}
+            {selectedProduct && <ProductDetailModal product={selectedProduct} onClose={closeModal} onAddToCart={handleAddToCart} formatCurrency={formatCurrency} />}
+            {isInvoiceModalOpen && <InvoiceModal onClose={closeModal} cart={cart} subtotal={cartSubtotal} onSubmitOrder={handleNewOrder} config={config} formatCurrency={formatCurrency} />}
             {isAddUserModalOpen && <AddUserModal onClose={() => setAddUserModalOpen(false)} onCreateUser={handleCreateUser} />}
 
 
@@ -920,8 +946,8 @@ const LoginPage: React.FC<{
         </button>
         <form onSubmit={handleSubmit} className="p-8">
             <div className="text-center mb-6">
-                 <h2 className="text-2xl font-bold font-serif text-on-surface">Panel de Control</h2>
-                 <p className="text-sm text-gray-600 mt-1">Ingresa a tu cuenta para administrar la tienda.</p>
+                 <h2 className="text-2xl font-bold font-serif text-on-surface">Iniciar Sesión</h2>
+                 <p className="text-sm text-gray-600 mt-1">Ingresa tus credenciales para continuar.</p>
             </div>
             
             <div className="space-y-4">
@@ -974,6 +1000,15 @@ const Header: React.FC<{
             contactElement.scrollIntoView({ behavior: 'smooth' });
         }
     };
+    
+    const handleLogoClick = (e: React.MouseEvent) => {
+        e.preventDefault();
+        setMobileMenuOpen(false); // Closes mobile menu if it was open
+        window.scrollTo({
+            top: 0,
+            behavior: 'smooth'
+        });
+    };
 
     return (
         <>
@@ -987,7 +1022,9 @@ const Header: React.FC<{
                         </div>
 
                         <div className="flex-shrink-0">
-                            <img src={logoUrl} alt="Bombon Logo" className="h-14 w-auto" />
+                           <a href="#" onClick={handleLogoClick} aria-label="Volver al inicio">
+                                <img src={logoUrl} alt="Bombon Logo" className="h-14 w-auto cursor-pointer" />
+                            </a>
                         </div>
 
                         <div className="flex-1 flex justify-end">
@@ -1015,7 +1052,9 @@ const Header: React.FC<{
                 aria-labelledby="mobile-menu-title"
             >
                 <div className="flex justify-between items-center p-4 border-b">
-                    <img src={logoUrl} alt="Bombon Logo" className="h-10 w-auto" id="mobile-menu-title" />
+                     <a href="#" onClick={handleLogoClick} aria-label="Volver al inicio">
+                        <img src={logoUrl} alt="Bombon Logo" className="h-10 w-auto" id="mobile-menu-title" />
+                    </a>
                     <button onClick={() => setMobileMenuOpen(false)} className="p-2 text-on-surface rounded-full hover:bg-gray-100" aria-label="Cerrar menú">
                         <CloseIcon className="w-6 h-6" />
                     </button>
@@ -1039,7 +1078,7 @@ const Header: React.FC<{
                         setMobileMenuOpen(false);
                         onAdminClick();
                     }} className="block text-lg px-4 py-3 rounded-md hover:bg-pink-100 hover:text-primary transition-colors">
-                        {currentUser ? 'Panel de Admin' : 'Iniciar Sesión'}
+                        {currentUser ? 'Administrar Tienda' : 'Iniciar Sesión'}
                     </a>
                 </nav>
             </div>
@@ -1135,7 +1174,7 @@ const BannerCarousel: React.FC<{ banners: Banner[]; onNavigateToCategory: (categ
 };
 
 const CartPanel: React.FC<{
-    setOpen: (isOpen: boolean) => void,
+    onClose: () => void,
     cart: CartItem[],
     subtotal: number,
     onUpdateQuantity: (id: string, qty: number) => void,
@@ -1145,7 +1184,7 @@ const CartPanel: React.FC<{
     suggestedProducts: Product[],
     onAddSuggestedProduct: (product: Product) => void,
     paymentMethodsImageUrl?: string
-}> = ({ setOpen, cart, subtotal, onUpdateQuantity, onRemoveItem, onCheckout, formatCurrency, suggestedProducts, onAddSuggestedProduct, paymentMethodsImageUrl }) => {
+}> = ({ onClose, cart, subtotal, onUpdateQuantity, onRemoveItem, onCheckout, formatCurrency, suggestedProducts, onAddSuggestedProduct, paymentMethodsImageUrl }) => {
     const FREE_SHIPPING_THRESHOLD = 150000;
     const missingForFreeShipping = Math.max(0, FREE_SHIPPING_THRESHOLD - subtotal);
     const progressPercentage = Math.min(100, (subtotal / FREE_SHIPPING_THRESHOLD) * 100);
@@ -1156,17 +1195,17 @@ const CartPanel: React.FC<{
     }, [cart, suggestedProducts]);
 
     return (
-        <div className="fixed inset-0 bg-black/60 z-[60]" onClick={() => setOpen(false)}>
+        <div className="fixed inset-0 bg-black/60 z-[60]" onClick={onClose}>
             <div className="fixed top-0 right-0 h-full w-full max-w-md bg-white shadow-xl flex flex-col" onClick={e => e.stopPropagation()}>
                 <div className="flex justify-between items-center p-4 border-b">
                     <h2 className="text-xl font-semibold">Carrito de Compras</h2>
-                    <button onClick={() => setOpen(false)}><CloseIcon className="w-6 h-6" /></button>
+                    <button onClick={onClose}><CloseIcon className="w-6 h-6" /></button>
                 </div>
                 {cart.length === 0 ? (
                     <div className="flex-grow flex flex-col items-center justify-center text-center p-4">
                         <CartIcon className="w-24 h-24 text-gray-300" />
                         <p className="mt-4 text-gray-500">Tu carrito está vacío.</p>
-                        <button onClick={() => setOpen(false)} className="mt-6 bg-primary text-white py-2 px-6 rounded-md hover:bg-primary-dark transition-colors">
+                        <button onClick={onClose} className="mt-6 bg-primary text-white py-2 px-6 rounded-md hover:bg-primary-dark transition-colors">
                             Seguir comprando
                         </button>
                     </div>
@@ -1347,10 +1386,10 @@ const ProductDetailModal: React.FC<{
 };
 
 const InvoiceModal: React.FC<{
-    setOpen: (isOpen: boolean) => void, cart: CartItem[], subtotal: number,
+    onClose: () => void, cart: CartItem[], subtotal: number,
     onSubmitOrder: (order: Omit<Order, 'docId' | 'orderNumber' | 'status' | 'date'>) => void, config: StoreConfig,
     formatCurrency: (amount: number) => string
-}> = ({ setOpen, cart, subtotal, onSubmitOrder, config, formatCurrency }) => {
+}> = ({ onClose, cart, subtotal, onSubmitOrder, config, formatCurrency }) => {
     const [customerName, setCustomerName] = useState('');
     const [customerPhone, setCustomerPhone] = useState('');
     const [deliveryMethod, setDeliveryMethod] = useState<'Recoger en Tienda' | 'Envío a Domicilio'>('Recoger en Tienda');
@@ -1398,11 +1437,11 @@ const InvoiceModal: React.FC<{
     };
 
     return (
-         <div className="fixed inset-0 bg-black/60 z-[70] flex items-center justify-center p-4" onClick={() => setOpen(false)}>
+         <div className="fixed inset-0 bg-black/60 z-[70] flex items-center justify-center p-4" onClick={onClose}>
             <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
                 <div className="flex justify-between items-center p-4 border-b">
                     <h2 className="text-xl font-semibold">Finalizar Compra</h2>
-                    <button type="button" onClick={() => setOpen(false)}><CloseIcon className="w-6 h-6" /></button>
+                    <button type="button" onClick={onClose}><CloseIcon className="w-6 h-6" /></button>
                 </div>
                 <div className="p-6 overflow-y-auto space-y-4 scrollbar-hide">
                     <h3 className="font-semibold text-lg border-b pb-2">Tus Datos</h3>
@@ -1543,7 +1582,7 @@ const ImageUpload: React.FC<{
 
 interface AdminPanelProps {
     user: User;
-    setOpen: (isOpen: boolean) => void;
+    onClose: () => void;
     editMode: boolean;
     setEditMode: (isEditing: boolean) => void;
     store: {
@@ -1572,7 +1611,7 @@ interface AdminPanelProps {
 
 const AdminPanel: React.FC<AdminPanelProps> = (props) => {
     const {
-        user, setOpen, editMode, setEditMode, store,
+        user, onClose, editMode, setEditMode, store,
         onUpdateConfig, onSaveBanners, onSaveCategories,
         onAddProduct, onUpdateProduct, onDeleteProduct,
         formatCurrency, productToEdit, onDeleteOrder, onUpdateOrder,
@@ -1698,7 +1737,7 @@ const AdminPanel: React.FC<AdminPanelProps> = (props) => {
     };
 
     return (
-        <div className="fixed inset-0 bg-black/60 z-[80] flex" onClick={() => setOpen(false)}>
+        <div className="fixed inset-0 bg-black/60 z-[80] flex" onClick={onClose}>
             <div className="bg-gray-100 w-full max-w-7xl h-full flex shadow-xl" onClick={e => e.stopPropagation()}>
                 <div className="w-64 bg-gray-800 text-white flex flex-col">
                     <div className="p-4 border-b border-gray-700">
@@ -1723,7 +1762,7 @@ const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                     </nav>
                      <div className="p-4 border-t border-gray-700 space-y-2">
                         <button onClick={onLogout} className="w-full text-left px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-700">Cerrar Sesión</button>
-                        <button onClick={() => setOpen(false)} className="w-full text-left px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-700">Cerrar Panel</button>
+                        <button onClick={onClose} className="w-full text-left px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-700">Cerrar Panel</button>
                     </div>
                 </div>
                 <div className="flex-grow h-full overflow-y-auto bg-white">{renderContent()}</div>
