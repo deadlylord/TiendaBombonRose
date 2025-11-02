@@ -232,6 +232,8 @@ const App: React.FC = () => {
     const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
     const [productToEdit, setProductToEdit] = useState<Product | null>(null);
     const [toasts, setToasts] = useState<ToastMessage[]>([]);
+    const selectedProductRef = useRef<Product | null>(null);
+    selectedProductRef.current = selectedProduct;
     
     // Search & Filter State
     const [searchTerm, setSearchTerm] = useState('');
@@ -241,6 +243,19 @@ const App: React.FC = () => {
     const [editMode, setEditMode] = useState(false);
     
     const isAppLoading = isConfigLoading || areBannersLoading || areProductsLoading || areCategoriesLoading || areOrdersLoading || isAuthLoading || areUsersLoading;
+
+    // --- BROWSER HISTORY / BACK BUTTON MODAL HANDLING ---
+    useEffect(() => {
+        const handlePopState = () => {
+            if (selectedProductRef.current) {
+                setSelectedProduct(null);
+            }
+        };
+        window.addEventListener('popstate', handlePopState);
+        return () => {
+            window.removeEventListener('popstate', handlePopState);
+        };
+    }, []);
 
     // --- AUTH EFFECT ---
     useEffect(() => {
@@ -332,12 +347,25 @@ const App: React.FC = () => {
         setSelectedProduct(null);
     };
     
+    const handleOpenProductDetails = (product: Product) => {
+        window.history.pushState({ modal: 'product' }, '');
+        setSelectedProduct(product);
+    };
+
+    const handleCloseProductModal = () => {
+        if (window.history.state?.modal === 'product') {
+            window.history.back();
+        } else {
+            setSelectedProduct(null);
+        }
+    };
+
     const handleQuickAddToCart = (product: Product) => {
       const hasDefinedSizes = !!(product.variants?.hasSizes && product.variants.sizes && Object.keys(product.variants.sizes).length > 0);
       const hasDefinedColors = !!(product.variants?.hasColors && product.variants.colors && Object.keys(product.variants.colors).length > 0);
 
       if (hasDefinedSizes || hasDefinedColors) {
-        setSelectedProduct(product);
+        handleOpenProductDetails(product);
       } else {
         handleAddToCart(product, 1);
       }
@@ -354,10 +382,6 @@ const App: React.FC = () => {
             return;
         }
         setCart(cart.map(item => item.id === cartItemId ? { ...item, quantity: newQuantity } : item));
-    };
-
-    const handleOpenProductDetails = (product: Product) => {
-        setSelectedProduct(product);
     };
     
     const handleOpenProductEdit = (product: Product) => {
@@ -673,6 +697,8 @@ const App: React.FC = () => {
                 categories={categories}
                 onSelectCategory={handleNavigateToCategory}
                 selectedCategory={selectedCategory}
+                currentUser={currentUser}
+                onAdminClick={() => setAdminOpen(true)}
             />
             
             <CategoryNav
@@ -722,7 +748,7 @@ const App: React.FC = () => {
 
             {isCartOpen && <CartPanel setOpen={setCartOpen} cart={cart} subtotal={cartSubtotal} onUpdateQuantity={handleUpdateCartQuantity} onRemoveItem={handleRemoveFromCart} onCheckout={() => { setCartOpen(false); setInvoiceModalOpen(true); }} formatCurrency={formatCurrency} suggestedProducts={bestSellers} onAddSuggestedProduct={handleQuickAddToCart} paymentMethodsImageUrl={config.paymentMethodsImageUrl} />}
             {renderAdminView()}
-            {selectedProduct && <ProductDetailModal product={selectedProduct} onClose={() => setSelectedProduct(null)} onAddToCart={handleAddToCart} formatCurrency={formatCurrency} />}
+            {selectedProduct && <ProductDetailModal product={selectedProduct} onClose={handleCloseProductModal} onAddToCart={handleAddToCart} formatCurrency={formatCurrency} />}
             {isInvoiceModalOpen && <InvoiceModal setOpen={setInvoiceModalOpen} cart={cart} subtotal={cartSubtotal} onSubmitOrder={handleNewOrder} config={config} formatCurrency={formatCurrency} />}
             {isAddUserModalOpen && <AddUserModal onClose={() => setAddUserModalOpen(false)} onCreateUser={handleCreateUser} />}
 
@@ -931,8 +957,10 @@ const Header: React.FC<{
     logoUrl: string, cartItemCount: number, onCartClick: () => void,
     isMobileMenuOpen: boolean, setMobileMenuOpen: (isOpen: boolean) => void,
     categories: Category[], onSelectCategory: (e: React.MouseEvent<HTMLAnchorElement>, category: Category | 'All') => void,
-    selectedCategory: string
-}> = ({ logoUrl, cartItemCount, onCartClick, isMobileMenuOpen, setMobileMenuOpen, categories, onSelectCategory, selectedCategory }) => {
+    selectedCategory: string,
+    currentUser: FirebaseUser | null,
+    onAdminClick: () => void;
+}> = ({ logoUrl, cartItemCount, onCartClick, isMobileMenuOpen, setMobileMenuOpen, categories, onSelectCategory, selectedCategory, currentUser, onAdminClick }) => {
     
     const baseLinkClasses = 'block text-lg px-4 py-3 rounded-md transition-colors';
     const activeLinkClasses = 'bg-pink-100 text-primary font-semibold';
@@ -1005,6 +1033,13 @@ const Header: React.FC<{
                     <div className="border-t my-4"></div>
                     <a href="#contacto" onClick={handleContactClick} className="block text-lg px-4 py-3 rounded-md hover:bg-pink-100 hover:text-primary transition-colors">
                         Contacto
+                    </a>
+                    <a href="#" onClick={(e) => {
+                        e.preventDefault();
+                        setMobileMenuOpen(false);
+                        onAdminClick();
+                    }} className="block text-lg px-4 py-3 rounded-md hover:bg-pink-100 hover:text-primary transition-colors">
+                        {currentUser ? 'Panel de Admin' : 'Iniciar Sesión'}
                     </a>
                 </nav>
             </div>
