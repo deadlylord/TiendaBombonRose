@@ -227,15 +227,17 @@ const App: React.FC = () => {
     const [isMobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [isCartOpen, setCartOpen] = useState(false);
     const [isAdminOpen, setAdminOpen] = useState(false);
+    const [isSearchModalOpen, setSearchModalOpen] = useState(false);
     const [isInvoiceModalOpen, setInvoiceModalOpen] = useState(false);
     const [isAddUserModalOpen, setAddUserModalOpen] = useState(false);
     const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
     const [productToEdit, setProductToEdit] = useState<Product | null>(null);
     const [toasts, setToasts] = useState<ToastMessage[]>([]);
+    const [isProductDetailFromCart, setProductDetailFromCart] = useState(false);
     
     // Search & Filter State
     const [searchTerm, setSearchTerm] = useState('');
-    const [selectedCategory, setSelectedCategory] = useState<Category | 'All'>('All');
+    const [selectedCategory, setSelectedCategory] = useState<Category | 'All' | 'On Sale'>('All');
 
     // Admin State
     const [editMode, setEditMode] = useState(false);
@@ -253,6 +255,7 @@ const App: React.FC = () => {
                 setAdminOpen(false);
                 setInvoiceModalOpen(false);
                 setAddUserModalOpen(false);
+                setSearchModalOpen(false);
                 modalHistoryActive.current = false;
             }
         };
@@ -271,7 +274,9 @@ const App: React.FC = () => {
             setAdminOpen(false);
             setInvoiceModalOpen(false);
             setAddUserModalOpen(false);
+            setSearchModalOpen(false);
         }
+        setProductDetailFromCart(false);
     };
 
     const openPrimaryModal = (setter: React.Dispatch<React.SetStateAction<any>>, value: any) => {
@@ -292,6 +297,10 @@ const App: React.FC = () => {
 
     const handleOpenAdmin = () => {
         openPrimaryModal(setAdminOpen, true);
+    };
+    
+    const handleOpenSearchModal = () => {
+        openPrimaryModal(setSearchModalOpen, true);
     };
 
 
@@ -346,7 +355,13 @@ const App: React.FC = () => {
     
     const filteredProducts = useMemo(() => {
         return (products || []).filter(product => {
-            const matchesCategory = selectedCategory === 'All' || product.category === selectedCategory;
+            let matchesCategory = true;
+            if (selectedCategory === 'On Sale') {
+                matchesCategory = product.discountPercentage != null && product.discountPercentage > 0;
+            } else if (selectedCategory !== 'All') {
+                matchesCategory = product.category === selectedCategory;
+            }
+            
             const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase());
             return matchesCategory && matchesSearch;
         });
@@ -362,7 +377,8 @@ const App: React.FC = () => {
         const cartItemId = `${product.id}${size ? `-${size}` : ''}${color ? `-${color}` : ''}`;
         const existingItem = cart.find(item => item.id === cartItemId);
 
-        const finalPrice = (product.discountPercentage && product.discountPercentage > 0)
+        const hasDiscount = product.discountPercentage != null && product.discountPercentage > 0;
+        const finalPrice = hasDiscount
             ? product.price * (1 - product.discountPercentage / 100)
             : product.price;
         
@@ -383,7 +399,10 @@ const App: React.FC = () => {
         }
         showToast(`${product.name} agregado al carrito!`);
         setSelectedProduct(null);
-        if (modalHistoryActive.current) window.history.back();
+        if (!isProductDetailFromCart) {
+            if (modalHistoryActive.current) window.history.back();
+        }
+        setProductDetailFromCart(false);
     };
     
     const handleQuickAddToCart = (product: Product) => {
@@ -391,9 +410,43 @@ const App: React.FC = () => {
       const hasDefinedColors = !!(product.variants?.hasColors && product.variants.colors && Object.keys(product.variants.colors).length > 0);
 
       if (hasDefinedSizes || hasDefinedColors) {
+        setProductDetailFromCart(false);
         handleOpenProductDetails(product);
       } else {
         handleAddToCart(product, 1);
+      }
+    };
+    
+    const handleQuickAddFromCart = (product: Product) => {
+      const hasDefinedSizes = !!(product.variants?.hasSizes && product.variants.sizes && Object.keys(product.variants.sizes).length > 0);
+      const hasDefinedColors = !!(product.variants?.hasColors && product.variants.colors && Object.keys(product.variants.colors).length > 0);
+
+      if (hasDefinedSizes || hasDefinedColors) {
+        setProductDetailFromCart(true);
+        handleOpenProductDetails(product);
+      } else {
+        const cartItemId = `${product.id}`;
+        const existingItem = cart.find(item => item.id === cartItemId);
+
+        const hasDiscount = product.discountPercentage != null && product.discountPercentage > 0;
+        const finalPrice = hasDiscount
+            ? product.price * (1 - product.discountPercentage / 100)
+            : product.price;
+        
+        if (existingItem) {
+            setCart(cart.map(item => item.id === cartItemId ? { ...item, quantity: item.quantity + 1 } : item));
+        } else {
+            const newItem: CartItem = {
+                id: cartItemId,
+                productId: product.id,
+                name: product.name,
+                price: finalPrice,
+                quantity: 1,
+                imageUrl: product.imageUrl,
+            };
+            setCart([...cart, newItem]);
+        }
+        showToast(`${product.name} agregado al carrito!`);
       }
     };
     
@@ -438,6 +491,16 @@ const App: React.FC = () => {
         // A slight delay might help if there are rendering issues, but smooth is better
         element.scrollIntoView({ behavior: 'smooth' });
       }
+    };
+    
+    const handleSearchAndNavigate = (term: string = '', category: Category | 'All' | 'On Sale' = 'All') => {
+        setSearchTerm(term);
+        setSelectedCategory(category);
+        closeModal();
+        const element = document.getElementById('productos');
+        if (element) {
+            element.scrollIntoView({ behavior: 'smooth' });
+        }
     };
     
     // --- ADMIN CRUD HANDLERS ---
@@ -604,7 +667,7 @@ const App: React.FC = () => {
     );
     
     const ProductCard: React.FC<{ product: Product }> = ({ product }) => {
-        const hasDiscount = product.discountPercentage && product.discountPercentage > 0;
+        const hasDiscount = product.discountPercentage != null && product.discountPercentage > 0;
         const discountedPrice = hasDiscount ? product.price * (1 - product.discountPercentage! / 100) : product.price;
 
         return (
@@ -725,6 +788,7 @@ const App: React.FC = () => {
                 selectedCategory={selectedCategory}
                 currentUser={currentUser}
                 onAdminClick={handleOpenAdmin}
+                onSearchClick={handleOpenSearchModal}
             />
             
             <CategoryNav
@@ -772,11 +836,16 @@ const App: React.FC = () => {
             
             <Footer contact={config.contact} social={config.social} onAdminClick={handleOpenAdmin} />
 
-            {isCartOpen && <CartPanel onClose={closeModal} cart={cart} subtotal={cartSubtotal} onUpdateQuantity={handleUpdateCartQuantity} onRemoveItem={handleRemoveFromCart} onCheckout={() => { setCartOpen(false); setInvoiceModalOpen(true); }} formatCurrency={formatCurrency} suggestedProducts={bestSellers} onAddSuggestedProduct={handleQuickAddToCart} paymentMethodsImageUrl={config.paymentMethodsImageUrl} />}
+            {isCartOpen && <CartPanel onClose={closeModal} cart={cart} subtotal={cartSubtotal} onUpdateQuantity={handleUpdateCartQuantity} onRemoveItem={handleRemoveFromCart} onCheckout={() => { setCartOpen(false); setInvoiceModalOpen(true); }} formatCurrency={formatCurrency} suggestedProducts={bestSellers} onAddSuggestedProduct={handleQuickAddFromCart} paymentMethodsImageUrl={config.paymentMethodsImageUrl} />}
             {renderAdminView()}
             {selectedProduct && <ProductDetailModal product={selectedProduct} onClose={closeModal} onAddToCart={handleAddToCart} formatCurrency={formatCurrency} />}
             {isInvoiceModalOpen && <InvoiceModal onClose={closeModal} cart={cart} subtotal={cartSubtotal} onSubmitOrder={handleNewOrder} config={config} formatCurrency={formatCurrency} />}
             {isAddUserModalOpen && <AddUserModal onClose={() => setAddUserModalOpen(false)} onCreateUser={handleCreateUser} />}
+            {isSearchModalOpen && <SearchModal 
+                onClose={closeModal} 
+                onSearch={(term) => handleSearchAndNavigate(term, 'All')} 
+                onSelectCategory={(category) => handleSearchAndNavigate('', category)} 
+            />}
 
 
             <a
@@ -793,6 +862,75 @@ const App: React.FC = () => {
 };
 
 // --- SUB-COMPONENTS ---
+
+const SearchModal: React.FC<{
+  onClose: () => void;
+  onSearch: (term: string) => void;
+  onSelectCategory: (category: Category | 'All' | 'On Sale') => void;
+}> = ({ onClose, onSearch, onSelectCategory }) => {
+  const [term, setTerm] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+  
+  const suggestions = [
+    { emoji: '👗', text: 'Vestidos', category: 'Vestidos' },
+    { emoji: '👖', text: 'Pantalones', category: 'Pantalones' },
+    { emoji: '👚', text: 'Blusas', category: 'Blusas' },
+    { emoji: '✨', text: 'Accesorios', category: 'Accesorios' },
+    { emoji: '👜', text: 'Bolsos', category: 'Bolsos' },
+    { emoji: '🧥', text: 'Chaquetas', category: 'Chaquetas' },
+    { emoji: '🔥', text: 'Ofertas', category: 'On Sale' },
+  ];
+  
+  const handleSuggestionClick = (category: Category | 'All' | 'On Sale') => {
+    onSelectCategory(category);
+  };
+
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onSearch(term);
+  };
+  
+  return (
+    <div className="fixed inset-0 bg-black/60 z-[70] flex justify-center items-start pt-20 p-4" onClick={onClose}>
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-lg" onClick={e => e.stopPropagation()}>
+        <form onSubmit={handleSearchSubmit}>
+          <div className="relative p-4">
+            <input 
+              ref={inputRef}
+              type="text" 
+              value={term}
+              onChange={(e) => setTerm(e.target.value)}
+              placeholder="¿Qué estás buscando hoy?"
+              className="w-full bg-surface border-2 border-gray-300 rounded-full pl-12 pr-4 py-3 focus:ring-2 focus:ring-primary focus:border-primary"
+            />
+            <SearchIcon className="absolute left-8 top-1/2 -translate-y-1/2 w-6 h-6 text-gray-400" />
+            <button type="submit" className="hidden">Buscar</button>
+          </div>
+        </form>
+        <div className="p-4 pt-0">
+          <h3 className="font-semibold mb-3 text-gray-600">Sugerencias de Búsqueda</h3>
+          <div className="flex flex-wrap gap-3">
+            {suggestions.map(s => (
+              <button 
+                key={s.text} 
+                onClick={() => handleSuggestionClick(s.category as any)}
+                className="flex items-center space-x-2 bg-gray-100 hover:bg-pink-100 text-on-surface hover:text-primary px-4 py-2 rounded-full transition-colors"
+              >
+                <span>{s.emoji}</span>
+                <span className="font-medium">{s.text}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 
 const AddUserModal: React.FC<{
     onClose: () => void;
@@ -985,8 +1123,9 @@ const Header: React.FC<{
     categories: Category[], onSelectCategory: (e: React.MouseEvent<HTMLAnchorElement>, category: Category | 'All') => void,
     selectedCategory: string,
     currentUser: FirebaseUser | null,
-    onAdminClick: () => void;
-}> = ({ logoUrl, cartItemCount, onCartClick, isMobileMenuOpen, setMobileMenuOpen, categories, onSelectCategory, selectedCategory, currentUser, onAdminClick }) => {
+    onAdminClick: () => void,
+    onSearchClick: () => void
+}> = ({ logoUrl, cartItemCount, onCartClick, isMobileMenuOpen, setMobileMenuOpen, categories, onSelectCategory, selectedCategory, currentUser, onAdminClick, onSearchClick }) => {
     
     const baseLinkClasses = 'block text-lg px-4 py-3 rounded-md transition-colors';
     const activeLinkClasses = 'bg-pink-100 text-primary font-semibold';
@@ -1027,10 +1166,13 @@ const Header: React.FC<{
                             </a>
                         </div>
 
-                        <div className="flex-1 flex justify-end">
-                            <button onClick={onCartClick} className="relative text-on-surface hover:text-primary p-2">
+                        <div className="flex-1 flex justify-end items-center">
+                            <button onClick={onSearchClick} className="relative text-on-surface hover:text-primary p-2" aria-label="Buscar productos">
+                                <SearchIcon className="w-6 h-6" />
+                            </button>
+                            <button onClick={onCartClick} className="relative text-on-surface hover:text-primary p-2" aria-label="Ver carrito de compras">
                                 <CartIcon className="w-6 h-6" />
-                                {cartItemCount > 0 && <span className="absolute -top-1 -right-1 bg-primary text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">{cartItemCount}</span>}
+                                {cartItemCount > 0 && <span className="absolute -top-1 -right-1 bg-primary text-white text-xs rounded-full h-5 w-5 flex items-center justify-center" aria-label={`${cartItemCount} productos en el carrito`}>{cartItemCount}</span>}
                             </button>
                         </div>
                     </div>
@@ -1319,14 +1461,14 @@ const ProductDetailModal: React.FC<{
         ? product.variants.colors[selectedColor]!.imageUrl
         : product.imageUrl;
     
-    const hasDiscount = product.discountPercentage && product.discountPercentage > 0;
+    const hasDiscount = product.discountPercentage != null && product.discountPercentage > 0;
     const discountedPrice = hasDiscount ? product.price * (1 - product.discountPercentage! / 100) : product.price;
 
     const isAddToCartDisabled = !product.available || (product.variants?.hasSizes && !selectedSize) || (product.variants?.hasColors && !selectedColor);
 
     return (
         <div className="fixed inset-0 bg-black/60 z-[70] flex items-center justify-center p-4" onClick={onClose}>
-            <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col md:flex-row overflow-y-auto md:overflow-hidden scrollbar-hide" onClick={e => e.stopPropagation()}>
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col md:flex-row overflow-y-auto md:overflow-hidden scrollbar-hide" onClick={e => e.stopPropagation()}>
                 <div className="w-full md:w-1/2 flex-shrink-0 aspect-[4/5] md:aspect-auto bg-gray-100">
                     <img src={displayImage} alt={product.name} className="w-full h-full object-cover" />
                 </div>
