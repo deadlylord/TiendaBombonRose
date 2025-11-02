@@ -2266,6 +2266,11 @@ const ProductEditor: React.FC<{
     };
     
     const handleColorRemove = (color: string) => {
+        const colorDetail = edited.variants?.colors?.[color];
+        if (colorDetail?.imageUrl && colorDetail.imageUrl === edited.imageUrl) {
+            handleChange('imageUrl', '');
+        }
+
         const { [color]: _, ...remaining } = edited.variants?.colors || {};
         handleVariantChange('colors', remaining);
     };
@@ -2276,6 +2281,10 @@ const ProductEditor: React.FC<{
         const updatedColor = { ...currentColorData, [field]: value };
         const newColors = { ...currentColors, [color]: updatedColor };
         handleVariantChange('colors', newColors);
+
+        if (field === 'imageUrl' && value && !edited.imageUrl) {
+            handleChange('imageUrl', value);
+        }
     };
 
     return (
@@ -2362,13 +2371,26 @@ const ProductEditor: React.FC<{
                                     <button onClick={handleColorAdd} className="bg-gray-200 px-3 py-1 text-sm rounded-md">+</button>
                                 </div>
                                 {Object.entries(edited.variants?.colors || {}).map(([color, detail]: [string, ProductColorVariantDetail]) => (
-                                    <div key={color} className="space-y-2 p-2 border rounded-md">
+                                    <div key={color} className="space-y-2 p-2 border rounded-md bg-gray-50">
                                         <div className="flex justify-between items-center text-sm font-medium">
                                           <span>{color}</span>
-                                          <button onClick={() => handleColorRemove(color)} className="text-red-500"><TrashIcon className="w-4 h-4"/></button>
+                                          <button onClick={() => handleColorRemove(color)} className="text-red-500 hover:text-red-700"><TrashIcon className="w-4 h-4"/></button>
                                         </div>
                                         <ImageUpload label="" currentImage={detail.imageUrl || ''} onImageSelect={url => handleColorUpdate(color, 'imageUrl', url)} />
-                                        <label className="flex items-center space-x-1 cursor-pointer text-sm"><input type="checkbox" checked={detail.available} onChange={e => handleColorUpdate(color, 'available', e.target.checked)} className="h-3.5 w-3.5"/><span>Disponible</span></label>
+                                        {detail.imageUrl && (
+                                            <button
+                                                type="button"
+                                                onClick={() => handleChange('imageUrl', detail.imageUrl!)}
+                                                disabled={detail.imageUrl === edited.imageUrl}
+                                                className="w-full text-xs py-1 px-2 rounded-md transition-colors disabled:cursor-not-allowed disabled:bg-primary disabled:text-white bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium"
+                                            >
+                                                {detail.imageUrl === edited.imageUrl ? '✔ Principal' : 'Usar como Principal'}
+                                            </button>
+                                        )}
+                                        <label className="flex items-center space-x-2 cursor-pointer text-sm">
+                                            <input type="checkbox" checked={detail.available} onChange={e => handleColorUpdate(color, 'available', e.target.checked)} className="h-3.5 w-3.5 text-primary focus:ring-primary border-gray-300 rounded"/>
+                                            <span>Disponible</span>
+                                        </label>
                                     </div>
                                 ))}
                             </div>
