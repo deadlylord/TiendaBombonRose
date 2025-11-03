@@ -23,6 +23,7 @@ export interface Product {
   available: boolean;
   variants: ProductVariants;
   discountPercentage?: number;
+  provider?: string;
 }
 
 export type Category = string;

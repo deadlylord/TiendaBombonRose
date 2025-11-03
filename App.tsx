@@ -31,6 +31,7 @@ const initialProducts: Product[] = [
     {
         id: 'prod1', name: 'Blusa de Seda "Aurora"', description: 'Elegante blusa de seda con un corte clásico y un tacto suave.',
         price: 180000, category: 'Blusas', imageUrl: 'https://i.ibb.co/f2sN19v/blusa-rosa.jpg', available: true,
+        provider: 'Seda Fina SAS',
         discountPercentage: 20,
         variants: {
             hasSizes: true, sizes: { 'S': { available: true }, 'M': { available: true }, 'L': { available: false } },
@@ -43,6 +44,7 @@ const initialProducts: Product[] = [
     {
         id: 'prod2', name: 'Vestido "Verano Eterno"', description: 'Vestido floral perfecto para un día soleado, ligero y fresco.',
         price: 250000, category: 'Vestidos', imageUrl: 'https://i.ibb.co/jLDhQ8T/vestido-verano.jpg', available: true,
+        provider: 'Estampados del Caribe',
         variants: {
             hasSizes: true, sizes: { 'S': { available: true }, 'M': { available: true }, 'L': { available: true } },
             hasColors: false, colors: {}
@@ -51,6 +53,7 @@ const initialProducts: Product[] = [
     {
         id: 'prod3', name: 'Pantalón Palazzo "Elegancia"', description: 'Pantalón de pierna ancha que estiliza la figura.',
         price: 220000, category: 'Pantalones', imageUrl: 'https://i.ibb.co/jWw9y1J/pantalon-negro.jpg', available: true,
+        provider: 'Confecciones Urbanas',
         discountPercentage: 15,
         variants: {
             hasSizes: true, sizes: { '34': { available: true }, '36': { available: true }, '38': { available: true } },
@@ -63,6 +66,7 @@ const initialProducts: Product[] = [
     {
         id: 'prod4', name: 'Bolso "Tote" de Cuero', description: 'Un bolso espacioso y chic para llevar todo lo que necesitas.',
         price: 350000, category: 'Bolsos', imageUrl: 'https://i.ibb.co/WcWz30D/bolso-marron.jpg', available: true,
+        provider: 'Marroquinería Fina',
         variants: {
             hasSizes: false, sizes: {},
             hasColors: true, colors: {
@@ -74,6 +78,7 @@ const initialProducts: Product[] = [
     {
         id: 'prod5', name: 'Falda Midi "Parisina"', description: 'Falda con pliegues y un estampado chic.',
         price: 190000, category: 'Vestidos', imageUrl: 'https://i.ibb.co/4T7vQd4/falda-midi.jpg', available: false, // Out of stock
+        provider: 'Estampados del Caribe',
         variants: {
             hasSizes: true, sizes: { 'S': { available: true }, 'M': { available: false } },
             hasColors: false, colors: {}
@@ -82,6 +87,7 @@ const initialProducts: Product[] = [
     {
         id: 'prod6', name: 'Aretes "Gota de Oro"', description: 'Aretes delicados para un toque de brillo.',
         price: 95000, category: 'Accesorios', imageUrl: 'https://i.ibb.co/mBkwfV2/aretes-oro.jpg', available: true,
+        provider: 'Joyería Brillante',
         variants: {
             hasSizes: false, sizes: {},
             hasColors: false, colors: {}
@@ -90,6 +96,7 @@ const initialProducts: Product[] = [
     {
         id: 'prod7', name: 'Chaqueta Denim "Urbana"', description: 'Chaqueta de jean clásica, un básico indispensable.',
         price: 280000, category: 'Chaquetas', imageUrl: 'https://i.ibb.co/mGg8BMR/chaqueta-denim.jpg', available: true,
+        provider: 'Confecciones Urbanas',
         variants: {
             hasSizes: true, sizes: { 'S': { available: true }, 'M': { available: true } },
             hasColors: false, colors: {}
@@ -98,6 +105,7 @@ const initialProducts: Product[] = [
      {
         id: 'prod8', name: 'Top Corto de Lino', description: 'Top fresco y versátil, ideal para combinar.',
         price: 130000, category: 'Blusas', imageUrl: 'https://i.ibb.co/tYtK6B0/top-lino.jpg', available: true,
+        provider: 'Seda Fina SAS',
         variants: {
             hasSizes: true, sizes: { 'XS': { available: true }, 'S': { available: true }, 'M': { available: true } },
             hasColors: false, colors: {}
@@ -715,7 +723,13 @@ const App: React.FC = () => {
                         </button>
                     </div>
                      {editMode && (userData?.role === 'admin' || userData?.role === 'vendedor') && (
-                      <div className="absolute inset-0 bg-black/50 flex items-center justify-center space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center space-y-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {product.provider && (
+                            <div className="text-center px-2">
+                                <span className="text-xs font-bold text-gray-300 uppercase tracking-wider">Proveedor</span>
+                                <p className="text-white font-semibold text-sm truncate">{product.provider}</p>
+                            </div>
+                        )}
                         <button onClick={(e) => {e.stopPropagation(); handleOpenProductEdit(product);}} className="bg-white text-on-surface px-3 py-1 rounded text-sm font-semibold flex items-center space-x-1">
                           <PencilIcon className="w-4 h-4"/>
                           <span>Editar</span>
@@ -1826,6 +1840,7 @@ const AdminPanel: React.FC<AdminPanelProps> = (props) => {
             category: (props.store.categories || [])[0] || '',
             imageUrl: '',
             available: true,
+            provider: '',
             discountPercentage: 0,
             variants: {
                 hasSizes: false, sizes: {},
@@ -2474,6 +2489,7 @@ const ProductEditor: React.FC<{
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-2 bg-white rounded-lg shadow p-6 space-y-4">
                     <AdminInput label="Nombre del Producto" value={edited.name} onChange={e => handleChange('name', e.target.value)} />
+                    <AdminInput label="Proveedor" value={edited.provider || ''} onChange={e => handleChange('provider', e.target.value)} placeholder="Ej: Confecciones ABC" />
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Descripción</label>
                         <textarea value={edited.description} onChange={e => handleChange('description', e.target.value)} rows={4} className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"/>
