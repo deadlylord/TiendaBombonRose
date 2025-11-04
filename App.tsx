@@ -1568,18 +1568,20 @@ const ProductDetailModal: React.FC<{
                     <img src={displayImage} alt={product.name} className="w-full h-full object-cover" />
                 </div>
                 <div className="w-full md:w-1/2 p-6 flex flex-col md:overflow-y-auto relative scrollbar-hide">
-                    <button onClick={onClose} className="absolute top-4 right-4 text-gray-500 hover:text-black p-1 rounded-full bg-white/50 hover:bg-white z-10"><CloseIcon className="w-6 h-6"/></button>
-                    
-                    <div className="flex justify-between items-start">
-                        <h2 className="text-2xl font-bold font-serif pr-4">{product.name}</h2>
-                         <button 
-                          onClick={handleShareProduct} 
-                          className="p-2 text-gray-500 hover:text-primary hover:bg-pink-100 rounded-full transition-colors flex-shrink-0"
-                          aria-label="Compartir producto"
+                    <div className="absolute top-4 right-4 z-10 flex items-center space-x-2">
+                        <button 
+                            onClick={handleShareProduct} 
+                            className="p-2 text-gray-500 bg-white/70 backdrop-blur-sm hover:text-primary hover:bg-pink-100 rounded-full transition-colors"
+                            aria-label="Compartir producto"
                         >
-                          <ShareIcon className="w-6 h-6"/>
+                            <ShareIcon className="w-6 h-6"/>
+                        </button>
+                        <button onClick={onClose} className="p-2 text-gray-500 bg-white/70 backdrop-blur-sm hover:text-black hover:bg-gray-100 rounded-full transition-colors">
+                            <CloseIcon className="w-6 h-6"/>
                         </button>
                     </div>
+                    
+                    <h2 className="text-2xl font-bold font-serif pr-24">{product.name}</h2>
 
                     <div className="flex items-baseline gap-3 my-2">
                         {hasDiscount && (
