@@ -1568,20 +1568,13 @@ const ProductDetailModal: React.FC<{
                     <img src={displayImage} alt={product.name} className="w-full h-full object-cover" />
                 </div>
                 <div className="w-full md:w-1/2 p-6 flex flex-col md:overflow-y-auto relative scrollbar-hide">
-                    <div className="absolute top-4 right-4 z-10 flex items-center space-x-2">
-                        <button 
-                            onClick={handleShareProduct} 
-                            className="p-2 text-gray-500 bg-white/70 backdrop-blur-sm hover:text-primary hover:bg-pink-100 rounded-full transition-colors"
-                            aria-label="Compartir producto"
-                        >
-                            <ShareIcon className="w-6 h-6"/>
-                        </button>
+                    <div className="absolute top-4 right-4 z-10">
                         <button onClick={onClose} className="p-2 text-gray-500 bg-white/70 backdrop-blur-sm hover:text-black hover:bg-gray-100 rounded-full transition-colors">
                             <CloseIcon className="w-6 h-6"/>
                         </button>
                     </div>
                     
-                    <h2 className="text-2xl font-bold font-serif pr-24">{product.name}</h2>
+                    <h2 className="text-2xl font-bold font-serif pr-14">{product.name}</h2>
 
                     <div className="flex items-baseline gap-3 my-2">
                         {hasDiscount && (
@@ -1617,13 +1610,24 @@ const ProductDetailModal: React.FC<{
                         </div>
                     )}
                     
-                    <div className="flex items-center space-x-4 my-4">
-                        <label htmlFor="quantity" className="font-semibold text-sm">Cantidad:</label>
-                        <div className="flex items-center">
-                            <button onClick={() => setQuantity(q => Math.max(1, q - 1))} className="p-2 border rounded-md"><MinusIcon className="w-5 h-5"/></button>
-                            <span className="text-lg font-bold w-12 text-center">{quantity}</span>
-                            <button onClick={() => setQuantity(q => q + 1)} className="p-2 border rounded-md"><PlusIcon className="w-5 h-5"/></button>
+                    <div className="flex items-center justify-between my-4">
+                        <div className="flex items-center space-x-4">
+                            <label htmlFor="quantity" className="font-semibold text-sm">Cantidad:</label>
+                            <div className="flex items-center">
+                                <button onClick={() => setQuantity(q => Math.max(1, q - 1))} className="p-2 border rounded-md"><MinusIcon className="w-5 h-5"/></button>
+                                <span className="text-lg font-bold w-12 text-center">{quantity}</span>
+                                <button onClick={() => setQuantity(q => q + 1)} className="p-2 border rounded-md"><PlusIcon className="w-5 h-5"/></button>
+                            </div>
                         </div>
+
+                        <button 
+                            onClick={handleShareProduct} 
+                            className="flex flex-col items-center text-on-surface hover:text-primary transition-colors"
+                            aria-label="Compartir producto"
+                        >
+                            <ShareIcon className="w-6 h-6"/>
+                            <span className="text-xs">Compartir</span>
+                        </button>
                     </div>
 
                     <button onClick={() => onAddToCart(product, quantity, selectedSize, selectedColor)} disabled={isAddToCartDisabled} className="w-full bg-primary text-white py-3 rounded-md hover:bg-primary-dark transition-colors mt-auto disabled:bg-gray-400 disabled:cursor-not-allowed">
