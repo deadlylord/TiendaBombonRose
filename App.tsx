@@ -257,66 +257,79 @@ const App: React.FC = () => {
     useEffect(() => {
         setInlineSearchTerm(searchTerm);
     }, [searchTerm]);
-    
-    // --- BROWSER HISTORY / BACK BUTTON MODAL HANDLING ---
-    const modalHistoryActive = useRef(false);
+
+    // --- ROUTING LOGIC ---
+    const [currentPath, setCurrentPath] = useState(window.location.hash);
 
     useEffect(() => {
-        const handlePopState = () => {
-            if (modalHistoryActive.current) {
-                setSelectedProduct(null);
-                setCartOpen(false);
-                setAdminOpen(false);
-                setInvoiceModalOpen(false);
-                setAddUserModalOpen(false);
-                setSearchModalOpen(false);
-                modalHistoryActive.current = false;
-            }
-        };
-        window.addEventListener('popstate', handlePopState);
-        return () => {
-            window.removeEventListener('popstate', handlePopState);
-        };
+        const onHashChange = () => setCurrentPath(window.location.hash);
+        window.addEventListener('hashchange', onHashChange);
+        // Trigger initial route check
+        onHashChange();
+        return () => window.removeEventListener('hashchange', onHashChange);
     }, []);
 
-    const closeModal = () => {
-        if (modalHistoryActive.current) {
-            window.history.back();
+    useEffect(() => {
+        const route = currentPath.replace(/^#/, '');
+
+        const productMatch = route.match(/^\/product\/([^/]+)/);
+        const isAdminRoute = route === '/admin';
+        const isCartRoute = route === '/cart';
+        const isCheckoutRoute = route === '/checkout';
+
+        // Close secondary (non-routed) modals if a primary one is opening
+        if (productMatch || isAdminRoute || isCartRoute || isCheckoutRoute) {
+            setSearchModalOpen(false);
+            setAddUserModalOpen(false);
+        }
+
+        // Handle Product Detail Modal
+        if (productMatch) {
+            const productId = productMatch[1];
+            const product = (products || []).find(p => p.id === productId);
+            if (product) {
+                setSelectedProduct(product);
+            } else if (!areProductsLoading) {
+                window.location.hash = '/'; // Product not found
+            }
         } else {
             setSelectedProduct(null);
-            setCartOpen(false);
-            setAdminOpen(false);
-            setInvoiceModalOpen(false);
-            setAddUserModalOpen(false);
-            setSearchModalOpen(false);
         }
-        setProductDetailFromCart(false);
+
+        // Handle Admin Panel
+        setAdminOpen(isAdminRoute);
+
+        // Handle Cart Panel
+        setCartOpen(isCartRoute);
+
+        // Handle Checkout/Invoice Modal
+        setInvoiceModalOpen(isCheckoutRoute);
+
+        // Reset from-cart flag if we are not in the product detail view anymore
+        if (!productMatch) {
+            setProductDetailFromCart(false);
+        }
+    }, [currentPath, products, areProductsLoading]);
+
+    const navigate = (path: string) => {
+        window.location.hash = path;
     };
 
-    const openPrimaryModal = (setter: React.Dispatch<React.SetStateAction<any>>, value: any) => {
-        if (!modalHistoryActive.current) {
-            window.history.pushState({ modal: true }, '');
-            modalHistoryActive.current = true;
-        }
-        setter(value);
+    const closeModal = () => {
+        navigate('/');
     };
-
+    
     const handleOpenProductDetails = (product: Product) => {
-        openPrimaryModal(setSelectedProduct, product);
+        navigate(`/product/${product.id}`);
     };
 
     const handleOpenCart = () => {
-        openPrimaryModal(setCartOpen, true);
+        navigate('/cart');
     };
 
     const handleOpenAdmin = () => {
-        openPrimaryModal(setAdminOpen, true);
+        navigate('/admin');
     };
-    
-    const handleOpenSearchModal = () => {
-        openPrimaryModal(setSearchModalOpen, true);
-    };
-
 
     // --- AUTH EFFECT ---
     useEffect(() => {
@@ -356,7 +369,7 @@ const App: React.FC = () => {
         try {
             await signOut(auth);
             showToast("Sesión cerrada exitosamente.");
-            setAdminOpen(false);
+            closeModal();
         } catch (error) {
             console.error("Error signing out: ", error);
             showToast("Error al cerrar sesión.", "error");
@@ -428,11 +441,12 @@ const App: React.FC = () => {
             setCart([...cart, newItem]);
         }
         showToast(`${product.name} agregado al carrito!`);
-        setSelectedProduct(null);
-        if (!isProductDetailFromCart) {
-            if (modalHistoryActive.current) window.history.back();
+        
+        if (isProductDetailFromCart) {
+            navigate('/cart');
+        } else {
+            closeModal();
         }
-        setProductDetailFromCart(false);
     };
     
     const handleQuickAddToCart = (product: Product) => {
@@ -518,7 +532,6 @@ const App: React.FC = () => {
       setSelectedCategory(category);
       const element = document.getElementById('productos');
       if (element) {
-        // A slight delay might help if there are rendering issues, but smooth is better
         element.scrollIntoView({ behavior: 'smooth' });
       }
     };
@@ -528,7 +541,7 @@ const App: React.FC = () => {
         if (category !== undefined) {
             setSelectedCategory(category);
         }
-        closeModal();
+        setSearchModalOpen(false);
         const element = document.getElementById('productos');
         if (element) {
             element.scrollIntoView({ behavior: 'smooth' });
@@ -591,7 +604,7 @@ const App: React.FC = () => {
             await addDoc(collection(db, 'orders'), newOrder);
 
             setCart([]);
-            closeModal();
+            navigate('/');
             showToast("¡Pedido enviado por WhatsApp!");
 
         } catch (error) {
@@ -681,7 +694,7 @@ const App: React.FC = () => {
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
-                    <p className="mt-4 text-on-surface">Cargando la magia de Bombon...</p>
+                    <p className="mt-4 text-on-surface">Descubre tu próximo outfit</p>
                 </div>
             </div>
         );
@@ -826,7 +839,7 @@ const App: React.FC = () => {
                 selectedCategory={selectedCategory}
                 currentUser={currentUser}
                 onAdminClick={handleOpenAdmin}
-                onSearchClick={handleOpenSearchModal}
+                onSearchClick={() => setSearchModalOpen(true)}
             />
             
             <CategoryNav
@@ -882,13 +895,13 @@ const App: React.FC = () => {
             
             <Footer contact={config.contact} social={config.social} onAdminClick={handleOpenAdmin} />
 
-            {isCartOpen && <CartPanel onClose={closeModal} cart={cart} subtotal={cartSubtotal} onUpdateQuantity={handleUpdateCartQuantity} onRemoveItem={handleRemoveFromCart} onCheckout={() => { setCartOpen(false); setInvoiceModalOpen(true); }} formatCurrency={formatCurrency} suggestedProducts={bestSellers} onAddSuggestedProduct={handleQuickAddFromCart} paymentMethodsImageUrl={config.paymentMethodsImageUrl} />}
+            {isCartOpen && <CartPanel onClose={closeModal} cart={cart} subtotal={cartSubtotal} onUpdateQuantity={handleUpdateCartQuantity} onRemoveItem={handleRemoveFromCart} onCheckout={() => navigate('/checkout')} formatCurrency={formatCurrency} suggestedProducts={bestSellers} onAddSuggestedProduct={handleQuickAddFromCart} paymentMethodsImageUrl={config.paymentMethodsImageUrl} />}
             {renderAdminView()}
             {selectedProduct && <ProductDetailModal product={selectedProduct} onClose={closeModal} onAddToCart={handleAddToCart} formatCurrency={formatCurrency} />}
-            {isInvoiceModalOpen && <InvoiceModal onClose={closeModal} cart={cart} subtotal={cartSubtotal} onSubmitOrder={handleNewOrder} config={config} formatCurrency={formatCurrency} />}
+            {isInvoiceModalOpen && <InvoiceModal onClose={() => navigate('/cart')} cart={cart} subtotal={cartSubtotal} onSubmitOrder={handleNewOrder} config={config} formatCurrency={formatCurrency} />}
             {isAddUserModalOpen && <AddUserModal onClose={() => setAddUserModalOpen(false)} onCreateUser={handleCreateUser} />}
             {isSearchModalOpen && <SearchModal 
-                onClose={closeModal} 
+                onClose={() => setSearchModalOpen(false)} 
                 onSearch={(term) => handleSearchAndNavigate(term, 'All')} 
                 onSelectCategory={(category) => handleSearchAndNavigate('', category)} 
             />}
@@ -1188,7 +1201,8 @@ const Header: React.FC<{
     
     const handleLogoClick = (e: React.MouseEvent) => {
         e.preventDefault();
-        setMobileMenuOpen(false); // Closes mobile menu if it was open
+        window.location.hash = '/';
+        setMobileMenuOpen(false);
         window.scrollTo({
             top: 0,
             behavior: 'smooth'
