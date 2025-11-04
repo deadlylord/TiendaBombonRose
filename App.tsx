@@ -8,7 +8,7 @@ import { onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndP
 import {
   CartIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, InstagramIcon, MenuIcon,
   SearchIcon, TikTokIcon, WhatsAppIcon, TrashIcon, PlusIcon, MinusIcon,
-  PencilIcon, UploadIcon
+  PencilIcon, UploadIcon, ShareIcon
 } from './components/Icons';
 
 // --- MOCK DATA (Initial values for Firestore) ---
@@ -548,6 +548,14 @@ const App: React.FC = () => {
         }
     };
     
+    const handleInlineSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const newTerm = e.target.value;
+        setInlineSearchTerm(newTerm);
+        if (newTerm === '') {
+            setSearchTerm('');
+        }
+    };
+    
     // --- ADMIN CRUD HANDLERS ---
     const handleUpdateConfig = (newConfig: StoreConfig) => { setConfig(newConfig); showToast("Configuración general guardada."); };
     const handleSaveBanners = (newBanners: Banner[]) => { setBannersDoc({ list: newBanners }); showToast("Banners guardados."); };
@@ -876,7 +884,7 @@ const App: React.FC = () => {
                                        type="text" 
                                        placeholder="Buscar productos por nombre..." 
                                        value={inlineSearchTerm}
-                                       onChange={e => setInlineSearchTerm(e.target.value)}
+                                       onChange={handleInlineSearchChange}
                                        className="w-full bg-white border border-gray-300 rounded-full pl-10 pr-4 py-2 focus:ring-2 focus:ring-primary focus:border-primary"
                                     />
                                    <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -897,7 +905,7 @@ const App: React.FC = () => {
 
             {isCartOpen && <CartPanel onClose={closeModal} cart={cart} subtotal={cartSubtotal} onUpdateQuantity={handleUpdateCartQuantity} onRemoveItem={handleRemoveFromCart} onCheckout={() => navigate('/checkout')} formatCurrency={formatCurrency} suggestedProducts={bestSellers} onAddSuggestedProduct={handleQuickAddFromCart} paymentMethodsImageUrl={config.paymentMethodsImageUrl} />}
             {renderAdminView()}
-            {selectedProduct && <ProductDetailModal product={selectedProduct} onClose={closeModal} onAddToCart={handleAddToCart} formatCurrency={formatCurrency} />}
+            {selectedProduct && <ProductDetailModal product={selectedProduct} onClose={closeModal} onAddToCart={handleAddToCart} formatCurrency={formatCurrency} showToast={showToast} />}
             {isInvoiceModalOpen && <InvoiceModal onClose={() => navigate('/cart')} cart={cart} subtotal={cartSubtotal} onSubmitOrder={handleNewOrder} config={config} formatCurrency={formatCurrency} />}
             {isAddUserModalOpen && <AddUserModal onClose={() => setAddUserModalOpen(false)} onCreateUser={handleCreateUser} />}
             {isSearchModalOpen && <SearchModal 
@@ -1500,7 +1508,8 @@ const ProductDetailModal: React.FC<{
     product: Product, onClose: () => void,
     onAddToCart: (product: Product, quantity: number, size?: string, color?: string) => void,
     formatCurrency: (amount: number) => string,
-}> = ({ product, onClose, onAddToCart, formatCurrency }) => {
+    showToast: (message: string, type?: 'success' | 'error') => void,
+}> = ({ product, onClose, onAddToCart, formatCurrency, showToast }) => {
     const [quantity, setQuantity] = useState(1);
     const [selectedSize, setSelectedSize] = useState<string | undefined>(undefined);
     const [selectedColor, setSelectedColor] = useState<string | undefined>(undefined);
@@ -1526,6 +1535,32 @@ const ProductDetailModal: React.FC<{
 
     const isAddToCartDisabled = !product.available || (product.variants?.hasSizes && !selectedSize) || (product.variants?.hasColors && !selectedColor);
 
+    const handleShareProduct = async () => {
+        const shareUrl = `${window.location.origin}${window.location.pathname}#/product/${product.id}`;
+        const shareData = {
+            title: product.name,
+            text: `¡Mira este increíble producto de Bombon Store: ${product.name}!`,
+            url: shareUrl,
+        };
+
+        try {
+            if (navigator.share) {
+                await navigator.share(shareData);
+            } else {
+                throw new Error('Web Share API no es compatible.');
+            }
+        } catch (err) {
+            console.warn("Fallback: copiando al portapapeles.", err);
+            try {
+                await navigator.clipboard.writeText(shareUrl);
+                showToast('Enlace copiado al portapapeles');
+            } catch (copyErr) {
+                console.error('Error al copiar el enlace: ', copyErr);
+                showToast('No se pudo copiar el enlace.', 'error');
+            }
+        }
+    };
+
     return (
         <div className="fixed inset-0 bg-black/60 z-[70] flex items-center justify-center p-4" onClick={onClose}>
             <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col md:flex-row overflow-y-auto md:overflow-hidden scrollbar-hide" onClick={e => e.stopPropagation()}>
@@ -1534,7 +1569,18 @@ const ProductDetailModal: React.FC<{
                 </div>
                 <div className="w-full md:w-1/2 p-6 flex flex-col md:overflow-y-auto relative scrollbar-hide">
                     <button onClick={onClose} className="absolute top-4 right-4 text-gray-500 hover:text-black p-1 rounded-full bg-white/50 hover:bg-white z-10"><CloseIcon className="w-6 h-6"/></button>
-                    <h2 className="text-2xl font-bold font-serif pr-8">{product.name}</h2>
+                    
+                    <div className="flex justify-between items-start">
+                        <h2 className="text-2xl font-bold font-serif pr-4">{product.name}</h2>
+                         <button 
+                          onClick={handleShareProduct} 
+                          className="p-2 text-gray-500 hover:text-primary hover:bg-pink-100 rounded-full transition-colors flex-shrink-0"
+                          aria-label="Compartir producto"
+                        >
+                          <ShareIcon className="w-6 h-6"/>
+                        </button>
+                    </div>
+
                     <div className="flex items-baseline gap-3 my-2">
                         {hasDiscount && (
                             <span className="text-gray-500 line-through text-2xl">{formatCurrency(product.price)}</span>
