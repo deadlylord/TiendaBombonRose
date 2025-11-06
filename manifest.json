@@ -8,12 +8,12 @@
   "description": "Una elegante tienda de ropa online con un catálogo completo, carrito de compras y un panel de administración.",
   "icons": [
     {
-      "src": "https://i.ibb.co/mG7gq1J/apple-touch-icon.png",
+      "src": "https://i.ibb.co/9g0gHw2/bombon-apple-touch-icon.png",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "https://i.ibb.co/b3qYqY0/icon-512.png",
+      "src": "https://i.ibb.co/c8QfV9k/bombon-icon-512.png",
       "sizes": "512x512",
       "type": "image/png"
     }
