@@ -773,7 +773,7 @@ const App: React.FC = () => {
 
     const ProductCarousel = ({ title, products: carouselProducts }: { title: string, products: Product[] }) => (
       <section className="py-12 bg-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl 2xl:max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
           <h2 className="text-3xl font-serif text-center mb-8 text-on-surface">{title}</h2>
           <div className="relative">
               <div className="flex overflow-x-auto space-x-6 pb-4 -mx-4 px-4 scrollbar-hide">
@@ -867,7 +867,7 @@ const App: React.FC = () => {
                 )}
                 
                 <section id="productos" className="py-12 bg-surface">
-                    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <div className="max-w-7xl 2xl:max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
                         <h2 className="text-3xl font-serif text-center mb-8 text-on-surface">
                            {selectedCategory === 'All' ? 'Todo Nuestro Catálogo' : selectedCategory}
                         </h2>
@@ -892,7 +892,7 @@ const App: React.FC = () => {
                             </form>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 md:gap-6">
+                        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 md:gap-6">
                             {filteredProducts.map(product => <ProductCard key={product.id} product={product} />)}
                         </div>
                         {filteredProducts.length === 0 && <p className="text-center col-span-full mt-8">No se encontraron productos que coincidan con tu búsqueda.</p>}
@@ -1220,7 +1220,7 @@ const Header: React.FC<{
     return (
         <>
             <header className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-sm shadow-md h-20">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-full">
+                <div className="max-w-7xl 2xl:max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 h-full">
                     <div className="flex items-center justify-between h-full">
                         <div className="flex-1 flex justify-start">
                             <button className="md:hidden text-on-surface" onClick={() => setMobileMenuOpen(true)}>
@@ -1303,7 +1303,7 @@ const CategoryNav: React.FC<{
 }> = ({ categories, selectedCategory, onSelectCategory }) => {
     return (
         <nav className="bg-surface border-b border-gray-200 sticky top-20 z-40">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="max-w-7xl 2xl:max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="flex items-center space-x-2 overflow-x-auto scrollbar-hide py-3 md:justify-center">
                     <button
                         onClick={() => onSelectCategory('All')}
@@ -1749,7 +1749,7 @@ const InvoiceModal: React.FC<{
 
 const Footer: React.FC<{ contact: StoreConfig['contact'], social: StoreConfig['social'], onAdminClick: () => void }> = ({ contact, social, onAdminClick }) => (
     <footer id="contacto" className="bg-gray-800 text-white">
-        <div className="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8 grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div className="max-w-7xl 2xl:max-w-screen-2xl mx-auto py-12 px-4 sm:px-6 lg:px-8 grid grid-cols-1 md:grid-cols-3 gap-8">
             <div>
                 <h3 className="font-serif text-lg">Bombon</h3>
                 <p className="mt-2 text-gray-400">Ropa con estilo que cuenta tu historia.</p>
