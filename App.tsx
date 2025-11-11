@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Product, Category, Banner, StoreConfig, CartItem, Order, ToastMessage, ProductVariantDetail, ProductColorVariantDetail, ProductVariants, User } from './types';
 import { db, storage, auth } from './services/firebase';
@@ -8,7 +9,7 @@ import { onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndP
 import {
   CartIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, InstagramIcon, MenuIcon,
   SearchIcon, TikTokIcon, WhatsAppIcon, TrashIcon, PlusIcon, MinusIcon,
-  PencilIcon, UploadIcon, ShareIcon
+  PencilIcon, UploadIcon, ShareIcon, HeartIcon, ShoppingBagIcon
 } from './components/Icons';
 
 // --- MOCK DATA (Initial values for Firestore) ---
@@ -412,7 +413,7 @@ const App: React.FC = () => {
 
     const newArrivals = useMemo(() => [...(products || [])].sort((a,b) => b.id.localeCompare(a.id)).slice(0, 6), [products]);
     const bestSellers = useMemo(() => {
-        return [...(products || [])].sort(() => Math.random() - 0.5).slice(0, 4);
+        return [...(products || [])].sort(() => Math.random() - 0.5).slice(0, 8);
     }, [products]);
 
     // --- EVENT HANDLERS ---
@@ -505,6 +506,11 @@ const App: React.FC = () => {
             return;
         }
         setCart(cart.map(item => item.id === cartItemId ? { ...item, quantity: newQuantity } : item));
+    };
+
+    const handleClearCart = () => {
+        setCart([]);
+        showToast("Carrito vaciado.", "error");
     };
     
     const handleOpenProductEdit = (product: Product) => {
@@ -771,22 +777,80 @@ const App: React.FC = () => {
         );
     };
 
-    const ProductCarousel = ({ title, products: carouselProducts }: { title: string, products: Product[] }) => (
-      <section className="py-12 bg-white">
-        <div className="max-w-7xl 2xl:max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
-          <h2 className="text-3xl font-serif text-center mb-8 text-on-surface">{title}</h2>
-          <div className="relative">
-              <div className="flex overflow-x-auto space-x-6 pb-4 -mx-4 px-4 scrollbar-hide">
-                  {carouselProducts.map(product => (
-                      <div key={product.id} className="flex-shrink-0 w-64 sm:w-72">
-                          <ProductCard product={product} />
-                      </div>
-                  ))}
+    const ProductCarousel: React.FC<{ title: string; products: Product[] }> = ({ title, products: carouselProducts }) => {
+        const scrollContainerRef = useRef<HTMLDivElement>(null);
+        const intervalRef = useRef<number | null>(null);
+
+        const manualScroll = (direction: 'left' | 'right') => {
+            if (scrollContainerRef.current) {
+                const scrollAmount = scrollContainerRef.current.offsetWidth * 0.8;
+                scrollContainerRef.current.scrollBy({
+                    left: direction === 'left' ? -scrollAmount : scrollAmount,
+                    behavior: 'smooth'
+                });
+            }
+        };
+        
+        const stopAutoScroll = () => {
+            if (intervalRef.current) {
+                clearInterval(intervalRef.current);
+                intervalRef.current = null;
+            }
+        };
+
+        const startAutoScroll = useCallback(() => {
+            stopAutoScroll();
+            if (scrollContainerRef.current && scrollContainerRef.current.scrollWidth > scrollContainerRef.current.clientWidth) {
+                intervalRef.current = window.setInterval(() => {
+                    if (scrollContainerRef.current) {
+                        const { scrollLeft, scrollWidth, clientWidth } = scrollContainerRef.current;
+                        if (scrollLeft + clientWidth >= scrollWidth - 1) {
+                            scrollContainerRef.current.scrollTo({ left: 0, behavior: 'smooth' });
+                        } else {
+                            scrollContainerRef.current.scrollBy({ left: clientWidth * 0.8, behavior: 'smooth' });
+                        }
+                    }
+                }, 4000);
+            }
+        }, [carouselProducts]);
+
+        useEffect(() => {
+            const timer = setTimeout(() => startAutoScroll(), 500);
+            return () => {
+                clearTimeout(timer);
+                stopAutoScroll();
+            }
+        }, [startAutoScroll]);
+        
+        if (!carouselProducts || carouselProducts.length === 0) return null;
+
+        return (
+          <section className="py-12 bg-white">
+            <div className="max-w-7xl 2xl:max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
+              <h2 className="text-3xl font-serif text-center mb-8 text-on-surface">{title}</h2>
+              <div 
+                className="relative group/carousel"
+                onMouseEnter={stopAutoScroll}
+                onMouseLeave={startAutoScroll}
+              >
+                  <button onClick={() => manualScroll('left')} className="absolute left-0 top-1/2 -translate-y-1/2 z-10 bg-white/80 backdrop-blur-sm rounded-full p-2 shadow-md hover:bg-white transition-all opacity-0 group-hover/carousel:opacity-100 disabled:opacity-0" aria-label="Anterior">
+                      <ChevronLeftIcon className="w-6 h-6 text-on-surface" />
+                  </button>
+                  <div ref={scrollContainerRef} className="flex overflow-x-auto space-x-6 pb-4 -mx-4 px-4 scrollbar-hide">
+                      {carouselProducts.map(product => (
+                          <div key={product.id} className="flex-shrink-0 w-64 sm:w-72">
+                              <ProductCard product={product} />
+                          </div>
+                      ))}
+                  </div>
+                  <button onClick={() => manualScroll('right')} className="absolute right-0 top-1/2 -translate-y-1/2 z-10 bg-white/80 backdrop-blur-sm rounded-full p-2 shadow-md hover:bg-white transition-all opacity-0 group-hover/carousel:opacity-100 disabled:opacity-0" aria-label="Siguiente">
+                      <ChevronRightIcon className="w-6 h-6 text-on-surface" />
+                  </button>
               </div>
-          </div>
-        </div>
-      </section>
-    );
+            </div>
+          </section>
+        );
+    };
     
     // --- RENDER ADMIN OR LOGIN VIEW ---
     const renderAdminView = () => {
@@ -903,7 +967,19 @@ const App: React.FC = () => {
             
             <Footer contact={config.contact} social={config.social} onAdminClick={handleOpenAdmin} />
 
-            {isCartOpen && <CartPanel onClose={closeModal} cart={cart} subtotal={cartSubtotal} onUpdateQuantity={handleUpdateCartQuantity} onRemoveItem={handleRemoveFromCart} onCheckout={() => navigate('/checkout')} formatCurrency={formatCurrency} suggestedProducts={bestSellers} onAddSuggestedProduct={handleQuickAddFromCart} paymentMethodsImageUrl={config.paymentMethodsImageUrl} />}
+            {isCartOpen && <CartPanel 
+                onClose={closeModal} 
+                cart={cart} 
+                subtotal={cartSubtotal} 
+                onUpdateQuantity={handleUpdateCartQuantity} 
+                onRemoveItem={handleRemoveFromCart} 
+                onCheckout={() => navigate('/checkout')} 
+                formatCurrency={formatCurrency} 
+                suggestedProducts={bestSellers} 
+                onAddSuggestedProduct={handleQuickAddFromCart} 
+                onClearCart={handleClearCart}
+                onContinueShopping={closeModal}
+            />}
             {renderAdminView()}
             {selectedProduct && <ProductDetailModal product={selectedProduct} onClose={closeModal} onAddToCart={handleAddToCart} formatCurrency={formatCurrency} showToast={showToast} />}
             {isInvoiceModalOpen && <InvoiceModal onClose={() => navigate('/cart')} cart={cart} subtotal={cartSubtotal} onSubmitOrder={handleNewOrder} config={config} formatCurrency={formatCurrency} />}
@@ -1384,36 +1460,92 @@ const BannerCarousel: React.FC<{ banners: Banner[]; onNavigateToCategory: (categ
 };
 
 const CartPanel: React.FC<{
-    onClose: () => void,
-    cart: CartItem[],
-    subtotal: number,
-    onUpdateQuantity: (id: string, qty: number) => void,
-    onRemoveItem: (id: string) => void,
-    onCheckout: () => void,
-    formatCurrency: (amount: number) => string,
-    suggestedProducts: Product[],
-    onAddSuggestedProduct: (product: Product) => void,
-    paymentMethodsImageUrl?: string
-}> = ({ onClose, cart, subtotal, onUpdateQuantity, onRemoveItem, onCheckout, formatCurrency, suggestedProducts, onAddSuggestedProduct, paymentMethodsImageUrl }) => {
-    const FREE_SHIPPING_THRESHOLD = 150000;
+    onClose: () => void;
+    cart: CartItem[];
+    subtotal: number;
+    onUpdateQuantity: (id: string, qty: number) => void;
+    onRemoveItem: (id: string) => void;
+    onCheckout: () => void;
+    formatCurrency: (amount: number) => string;
+    suggestedProducts: Product[];
+    onAddSuggestedProduct: (product: Product) => void;
+    onClearCart: () => void;
+    onContinueShopping: () => void;
+}> = ({ onClose, cart, subtotal, onUpdateQuantity, onRemoveItem, onCheckout, formatCurrency, suggestedProducts, onAddSuggestedProduct, onClearCart, onContinueShopping }) => {
+    const FREE_SHIPPING_THRESHOLD = 300000;
     const missingForFreeShipping = Math.max(0, FREE_SHIPPING_THRESHOLD - subtotal);
     const progressPercentage = Math.min(100, (subtotal / FREE_SHIPPING_THRESHOLD) * 100);
     
     const finalSuggestions = useMemo(() => {
         const cartProductIds = new Set(cart.map(item => item.productId));
-        return suggestedProducts.filter(p => !cartProductIds.has(p.id)).slice(0, 3);
+        return suggestedProducts.filter(p => !cartProductIds.has(p.id) && p.available);
     }, [cart, suggestedProducts]);
+    
+    const scrollContainerRef = useRef<HTMLDivElement>(null);
+    const intervalRef = useRef<number | null>(null);
+
+    const manualScroll = (direction: 'left' | 'right') => {
+        if (scrollContainerRef.current) {
+            const cardWidth = 200; // Approximate width of a suggestion card
+            scrollContainerRef.current.scrollBy({
+                left: direction === 'left' ? -cardWidth : cardWidth,
+                behavior: 'smooth'
+            });
+        }
+    };
+
+    const stopAutoScroll = () => {
+        if (intervalRef.current) {
+            clearInterval(intervalRef.current);
+            intervalRef.current = null;
+        }
+    };
+
+    const startAutoScroll = useCallback(() => {
+        stopAutoScroll();
+        if (scrollContainerRef.current && scrollContainerRef.current.scrollWidth > scrollContainerRef.current.clientWidth) {
+            intervalRef.current = window.setInterval(() => {
+                if (scrollContainerRef.current) {
+                    const { scrollLeft, scrollWidth, clientWidth } = scrollContainerRef.current;
+                    const cardWidth = 176; // w-40 + space-x-4
+                    if (scrollLeft + clientWidth >= scrollWidth - 1) {
+                        scrollContainerRef.current.scrollTo({ left: 0, behavior: 'smooth' });
+                    } else {
+                        scrollContainerRef.current.scrollBy({ left: cardWidth, behavior: 'smooth' });
+                    }
+                }
+            }, 4000);
+        }
+    }, [finalSuggestions]);
+
+    useEffect(() => {
+        const timer = setTimeout(() => startAutoScroll(), 500);
+        return () => {
+            clearTimeout(timer);
+            stopAutoScroll();
+        };
+    }, [startAutoScroll]);
+    
+    const handleEmptyCart = () => {
+        if(window.confirm('¿Estás seguro de que quieres vaciar tu carrito?')) {
+            onClearCart();
+        }
+    }
 
     return (
         <div className="fixed inset-0 bg-black/60 z-[60]" onClick={onClose}>
-            <div className="fixed top-0 right-0 h-full w-full max-w-md bg-white shadow-xl flex flex-col" onClick={e => e.stopPropagation()}>
-                <div className="flex justify-between items-center p-4 border-b">
-                    <h2 className="text-xl font-semibold">Carrito de Compras</h2>
-                    <button onClick={onClose}><CloseIcon className="w-6 h-6" /></button>
+            <div className="fixed top-0 right-0 h-full w-full max-w-md bg-surface shadow-xl flex flex-col" onClick={e => e.stopPropagation()}>
+                <div className="flex justify-between items-center p-4 border-b bg-white">
+                    <div className="flex items-center space-x-2">
+                        <ShoppingBagIcon className="w-6 h-6 text-primary"/>
+                        <h2 className="text-lg font-bold uppercase tracking-wide text-on-surface">CARRITO</h2>
+                    </div>
+                    <button onClick={onClose} className="p-1 rounded-full hover:bg-gray-100"><CloseIcon className="w-6 h-6" /></button>
                 </div>
+
                 {cart.length === 0 ? (
-                    <div className="flex-grow flex flex-col items-center justify-center text-center p-4">
-                        <CartIcon className="w-24 h-24 text-gray-300" />
+                    <div className="flex-grow flex flex-col items-center justify-center text-center p-4 bg-white">
+                        <ShoppingBagIcon className="w-24 h-24 text-gray-300" />
                         <p className="mt-4 text-gray-500">Tu carrito está vacío.</p>
                         <button onClick={onClose} className="mt-6 bg-primary text-white py-2 px-6 rounded-md hover:bg-primary-dark transition-colors">
                             Seguir comprando
@@ -1421,81 +1553,101 @@ const CartPanel: React.FC<{
                     </div>
                 ) : (
                     <>
-                    <div className="flex-grow overflow-y-auto p-4 space-y-4">
-                        {cart.map(item => (
-                            <div key={item.id} className="flex items-start space-x-4">
-                                <img src={item.imageUrl} alt={item.name} className="w-20 h-24 object-cover rounded-md"/>
-                                <div className="flex-grow">
-                                    <h3 className="font-semibold">{item.name}</h3>
-                                    <p className="text-sm text-gray-500">{item.size && `Talla: ${item.size}`}{item.color && `, Color: ${item.color}`}</p>
-                                    <p className="text-sm font-bold text-primary">{formatCurrency(item.price)}</p>
-                                    <div className="flex items-center mt-2">
-                                        <button onClick={() => onUpdateQuantity(item.id, item.quantity - 1)} className="p-1 border rounded-md"><MinusIcon className="w-4 h-4"/></button>
-                                        <span className="px-3 font-semibold">{item.quantity}</span>
-                                        <button onClick={() => onUpdateQuantity(item.id, item.quantity + 1)} className="p-1 border rounded-md"><PlusIcon className="w-4 h-4"/></button>
-                                    </div>
-                                </div>
-                                <button onClick={() => onRemoveItem(item.id)}><TrashIcon className="w-5 h-5 text-gray-400 hover:text-red-500"/></button>
-                            </div>
-                        ))}
-                    </div>
-                    
-                    {finalSuggestions.length > 0 && (
-                        <div className="p-4 border-t bg-surface">
-                            <h3 className="font-semibold text-sm mb-3">Completa tu look</h3>
-                            <div className="space-y-3">
-                                {finalSuggestions.map(product => (
-                                    <div key={product.id} className="flex items-center space-x-3">
-                                        <img src={product.imageUrl} alt={product.name} className="w-14 h-16 object-cover rounded-md flex-shrink-0" />
-                                        <div className="flex-grow overflow-hidden">
-                                            <p className="text-sm font-medium truncate">{product.name}</p>
-                                            <p className="text-sm text-primary font-bold">{formatCurrency(product.price)}</p>
-                                        </div>
-                                        <button
-                                            onClick={() => onAddSuggestedProduct(product)}
-                                            className="bg-pink-100 text-primary rounded-full p-2 hover:bg-primary hover:text-white transition-colors flex-shrink-0"
-                                            aria-label={`Agregar ${product.name} al carrito`}
-                                        >
-                                            <PlusIcon className="w-4 h-4" />
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    <div className="p-4 border-t space-y-4 bg-surface">
-                         <div className="w-full">
-                            <div className="bg-gray-200 rounded-full h-2.5 mb-1">
-                                <div className="bg-primary h-2.5 rounded-full transition-all duration-500" style={{ width: `${progressPercentage}%` }}></div>
-                            </div>
-                            <p className="text-xs text-center font-medium text-gray-600">
+                    <div className="flex-grow overflow-y-auto">
+                        <div className="p-4 bg-white">
+                            <p className="text-sm text-center mb-1">
                                 {missingForFreeShipping > 0
-                                    ? `¡Te faltan ${formatCurrency(missingForFreeShipping)} para el envío gratis!`
+                                    ? `¡Te falta ${formatCurrency(missingForFreeShipping)} para obtener tu envío gratis!`
                                     : "¡Felicidades! Tienes envío gratis."}
                             </p>
-                        </div>
-                        <div className="flex justify-between font-bold text-lg">
-                            <span>Subtotal:</span>
-                            <span>{formatCurrency(subtotal)}</span>
-                        </div>
-                        <button onClick={onCheckout} className="w-full bg-primary text-white py-3 rounded-md hover:bg-primary-dark transition-colors font-semibold">
-                            Finalizar Compra
-                        </button>
-                        <div className="text-center pt-2">
-                            <p className="text-xs text-gray-500 mb-2">Medios de pago seguros</p>
-                            <div className="flex justify-center items-center">
-                                {paymentMethodsImageUrl ? (
-                                    <img 
-                                        src={paymentMethodsImageUrl} 
-                                        alt="Medios de pago aceptados" 
-                                        className="h-auto w-full max-w-xs object-contain"
-                                    />
-                                ) : (
-                                    <p className="text-xs text-gray-400 text-center">Configura la imagen de pagos en el panel de admin.</p>
-                                )}
+                            <div className="w-full bg-pink-100 rounded-full h-2.5">
+                                <div className="bg-primary h-2.5 rounded-full transition-all duration-500" style={{ width: `${progressPercentage}%` }}></div>
+                            </div>
+                             <div className="flex justify-between text-xs mt-1 text-gray-600">
+                                <span>{formatCurrency(subtotal)}</span>
+                                <span>{formatCurrency(FREE_SHIPPING_THRESHOLD)}</span>
                             </div>
                         </div>
+
+                        <div className="py-4 space-y-4 bg-white mt-2">
+                            {cart.map(item => (
+                                <div key={item.id} className="flex items-start space-x-4 px-4">
+                                    <img src={item.imageUrl} alt={item.name} className="w-20 h-24 object-cover"/>
+                                    <div className="flex-grow">
+                                        <h3 className="font-semibold text-sm uppercase">{item.name}</h3>
+                                        <p className="text-sm text-gray-500">Precio: {formatCurrency(item.price)}</p>
+                                        <div className="flex items-center mt-2 border border-gray-300 w-fit">
+                                            <button onClick={() => onUpdateQuantity(item.id, item.quantity - 1)} className="px-2 py-1"><MinusIcon className="w-3 h-3"/></button>
+                                            <span className="px-3 text-sm font-semibold">{item.quantity}</span>
+                                            <button onClick={() => onUpdateQuantity(item.id, item.quantity + 1)} className="px-2 py-1"><PlusIcon className="w-3 h-3"/></button>
+                                        </div>
+                                    </div>
+                                    <div className="flex flex-col items-end justify-between h-24">
+                                        <div className="flex space-x-2">
+                                            <button><HeartIcon className="w-5 h-5 text-gray-400 hover:text-primary transition-colors"/></button>
+                                            <button onClick={() => onRemoveItem(item.id)}><TrashIcon className="w-5 h-5 text-gray-400 hover:text-primary transition-colors"/></button>
+                                        </div>
+                                        <p className="font-semibold text-sm">{formatCurrency(item.price * item.quantity)}</p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        
+                        {finalSuggestions.length > 0 && (
+                            <div className="py-6 bg-surface mt-2">
+                                <h3 className="font-serif text-center text-xl mb-4">Productos que te podrían gustar</h3>
+                                <div 
+                                    className="relative group/suggestions"
+                                    onMouseEnter={stopAutoScroll}
+                                    onMouseLeave={startAutoScroll}
+                                >
+                                    <button onClick={() => manualScroll('left')} className="absolute -left-2 top-1/2 -translate-y-1/2 z-10 bg-white rounded-full p-1 shadow-md hover:bg-gray-200 transition-all opacity-0 group-hover/suggestions:opacity-100" aria-label="Anterior">
+                                        <ChevronLeftIcon className="w-5 h-5 text-on-surface" />
+                                    </button>
+                                    <div ref={scrollContainerRef} className="flex overflow-x-auto space-x-4 pb-2 -mx-4 px-6 scrollbar-hide">
+                                        {finalSuggestions.map(product => (
+                                            <div key={product.id} className="flex-shrink-0 w-40 bg-white p-2 rounded-lg shadow-sm">
+                                                <img src={product.imageUrl} alt={product.name} className="w-full h-40 object-cover" />
+                                                <div className="text-center mt-2">
+                                                    <p className="text-xs font-bold uppercase truncate">{product.name}</p>
+                                                    <p className="text-sm text-primary font-semibold">{formatCurrency(product.price)}</p>
+                                                    <button
+                                                        onClick={() => onAddSuggestedProduct(product)}
+                                                        className="w-full mt-2 bg-primary text-white text-xs font-bold py-2 px-1 hover:bg-primary-dark transition-colors"
+                                                    >
+                                                        SELECCIONAR
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                     <button onClick={() => manualScroll('right')} className="absolute -right-2 top-1/2 -translate-y-1/2 z-10 bg-white rounded-full p-1 shadow-md hover:bg-gray-200 transition-all opacity-0 group-hover/suggestions:opacity-100" aria-label="Siguiente">
+                                        <ChevronRightIcon className="w-5 h-5 text-on-surface" />
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                    
+                    <div className="p-4 border-t space-y-3 bg-white">
+                         <button onClick={handleEmptyCart} className="text-center w-full text-sm text-gray-600 hover:text-primary hover:underline">Vaciar Carrito</button>
+                         <div className="flex justify-between font-bold text-lg border-t border-dashed pt-3">
+                            <span>Total</span>
+                            <span>{formatCurrency(subtotal)}</span>
+                        </div>
+                        <p className="text-xs text-gray-500 text-center">Podrás ver el costo del envío al finalizar la compra.</p>
+                        
+                        <div className="grid grid-cols-2 gap-3">
+                            <button onClick={onClose} className="w-full bg-white text-primary py-3 text-sm font-bold border border-primary hover:bg-pink-50 transition-colors">
+                                VER CARRITO
+                            </button>
+                            <button onClick={onContinueShopping} className="w-full bg-white text-primary py-3 text-sm font-bold border border-primary hover:bg-pink-50 transition-colors">
+                                SEGUIR COMPRANDO
+                            </button>
+                        </div>
+                        <button onClick={onCheckout} className="w-full bg-primary text-white py-3 font-bold hover:bg-primary-dark transition-colors">
+                            FINALIZAR COMPRA
+                        </button>
                     </div>
                     </>
                 )}
@@ -1563,11 +1715,11 @@ const ProductDetailModal: React.FC<{
 
     return (
         <div className="fixed inset-0 bg-black/60 z-[70] flex items-center justify-center p-4" onClick={onClose}>
-            <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col md:flex-row overflow-y-auto md:overflow-hidden scrollbar-hide" onClick={e => e.stopPropagation()}>
-                <div className="w-full md:w-1/2 flex-shrink-0 aspect-[4/5] md:aspect-auto bg-gray-100">
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col md:flex-row overflow-hidden" onClick={e => e.stopPropagation()}>
+                <div className="w-full aspect-square md:aspect-auto md:h-full md:w-1/2 flex-shrink-0 bg-gray-100">
                     <img src={displayImage} alt={product.name} className="w-full h-full object-cover" />
                 </div>
-                <div className="w-full md:w-1/2 p-6 flex flex-col md:overflow-y-auto relative scrollbar-hide">
+                <div className="w-full md:h-full md:w-1/2 p-6 flex flex-col overflow-y-auto relative scrollbar-hide">
                     <div className="absolute top-4 right-4 z-10">
                         <button onClick={onClose} className="p-2 text-gray-500 bg-white/70 backdrop-blur-sm hover:text-black hover:bg-gray-100 rounded-full transition-colors">
                             <CloseIcon className="w-6 h-6"/>
