@@ -51,6 +51,7 @@ export interface SocialLinks {
 
 export interface StoreConfig {
   logoUrl: string;
+  secondLogoUrl?: string;
   contact: ContactInfo;
   social: SocialLinks;
   paymentMethodsImageUrl?: string;

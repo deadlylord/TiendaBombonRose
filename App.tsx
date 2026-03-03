@@ -17,6 +17,7 @@ import {
 // --- MOCK DATA (Initial values for Firestore) ---
 const initialConfig: StoreConfig = {
     logoUrl: 'https://i.ibb.co/3Y7f0fM/bombon-logo.png',
+    secondLogoUrl: 'https://i.ibb.co/9GZ9m3z/street-legends-logo.png',
     contact: { name: 'Bombon Store', phone: '573001234567', schedule: 'Lunes a Sábado, 9am - 7pm' },
     social: { instagram: 'https://instagram.com', tiktok: 'https://tiktok.com', whatsapp: '573001234567' },
     paymentMethodsImageUrl: 'https://i.ibb.co/QPDWf6s/medios-de-pago.png'
@@ -91,13 +92,13 @@ const useFirestoreDocSync = <T extends object>(collectionName: string, docId: st
         return () => unsubscribe();
     }, [docRef, JSON.stringify(initialValue)]);
 
-    const setValue = useCallback((value: T) => {
+    const setValue = useCallback(async (value: T) => {
         try {
-            setDoc(docRef, value, { merge: true });
+            await setDoc(docRef, value, { merge: true });
         } catch (error) {
             console.error(`Firestore setDoc error for ${collectionName}/${docId}:`, error);
         }
-    }, [docRef]);
+    }, [docRef, collectionName, docId]);
 
     return [data, setValue, isLoading];
 };
@@ -218,6 +219,9 @@ const App: React.FC = () => {
     const [toasts, setToasts] = useState<ToastMessage[]>([]);
     const [isProductDetailFromCart, setProductDetailFromCart] = useState(false);
     
+    // Theme State
+    const [isMenTheme, setIsMenTheme] = useState(false);
+    
     // Search & Filter State
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedCategory, setSelectedCategory] = useState<Category | 'All' | 'On Sale'>('All');
@@ -227,6 +231,16 @@ const App: React.FC = () => {
     const [editMode, setEditMode] = useState(false);
     
     const isAppLoading = isConfigLoading || areBannersLoading || areProductsLoading || areCategoriesLoading || areOrdersLoading || isAuthLoading || areUsersLoading;
+
+    // Theme Effect
+    useEffect(() => {
+        const root = document.documentElement;
+        if (isMenTheme) {
+            root.setAttribute('data-theme', 'men');
+        } else {
+            root.removeAttribute('data-theme');
+        }
+    }, [isMenTheme]);
 
     // Sync global search term to inline search input
     useEffect(() => {
@@ -508,6 +522,16 @@ const App: React.FC = () => {
         e.preventDefault();
         setSelectedCategory(category);
         setMobileMenuOpen(false);
+        
+        // Update theme based on category
+        if (category === 'All') {
+            setIsMenTheme(false);
+        } else {
+            const lowerCat = category.toLowerCase();
+            const isMen = lowerCat.includes('hombre') || lowerCat.includes('caballero') || lowerCat.includes('men') || lowerCat.includes('niño') || lowerCat.includes('niña') || lowerCat.includes('camisa') || lowerCat.includes('camiseta') || lowerCat.includes('street');
+            setIsMenTheme(isMen);
+        }
+
         const element = document.getElementById('productos');
         if (element) {
             element.scrollIntoView({ behavior: 'smooth' });
@@ -516,6 +540,16 @@ const App: React.FC = () => {
     
     const handleCategoryButtonClick = (category: Category | 'All') => {
       setSelectedCategory(category);
+      
+      // Update theme based on category
+      if (category === 'All') {
+          setIsMenTheme(false);
+      } else {
+          const lowerCat = category.toLowerCase();
+          const isMen = lowerCat.includes('hombre') || lowerCat.includes('caballero') || lowerCat.includes('men') || lowerCat.includes('niño') || lowerCat.includes('niña') || lowerCat.includes('camisa') || lowerCat.includes('camiseta') || lowerCat.includes('street');
+          setIsMenTheme(isMen);
+      }
+
       const element = document.getElementById('productos');
       if (element) {
         element.scrollIntoView({ behavior: 'smooth' });
@@ -526,6 +560,15 @@ const App: React.FC = () => {
         setSearchTerm(term);
         if (category !== undefined) {
             setSelectedCategory(category);
+            
+            // Update theme based on category
+            if (category === 'All' || category === 'On Sale') {
+                setIsMenTheme(false);
+            } else {
+                const lowerCat = category.toLowerCase();
+                const isMen = lowerCat.includes('hombre') || lowerCat.includes('caballero') || lowerCat.includes('men') || lowerCat.includes('niño') || lowerCat.includes('niña') || lowerCat.includes('camisa') || lowerCat.includes('camiseta') || lowerCat.includes('street');
+                setIsMenTheme(isMen);
+            }
         }
         setSearchModalOpen(false);
         const element = document.getElementById('productos');
@@ -543,7 +586,15 @@ const App: React.FC = () => {
     };
     
     // --- ADMIN CRUD HANDLERS ---
-    const handleUpdateConfig = (newConfig: StoreConfig) => { setConfig(newConfig); showToast("Configuración general guardada."); };
+    const handleUpdateConfig = async (newConfig: StoreConfig) => { 
+        try {
+            await setConfig(newConfig); 
+            showToast("¡Configuración guardada con éxito!"); 
+        } catch (error) {
+            console.error("Error updating config:", error);
+            showToast("Error al guardar la configuración.");
+        }
+    };
     const handleSaveBanners = (newBanners: Banner[]) => { setBannersDoc({ list: newBanners }); showToast("Banners guardados."); };
     const handleSaveCategories = (newCategories: Category[]) => { setCategoriesDoc({ list: newCategories }); showToast("Categorías guardadas."); };
     
@@ -719,8 +770,8 @@ const App: React.FC = () => {
         const discountedPrice = hasDiscount ? product.price * (1 - product.discountPercentage! / 100) : product.price;
 
         return (
-            <div className="relative group bg-white rounded-lg shadow-md overflow-hidden flex flex-col h-full cursor-pointer" onClick={() => handleOpenProductDetails(product)}>
-                <div className="relative aspect-[4/5] w-full overflow-hidden bg-gray-50">
+            <div className="relative group bg-surface rounded-lg shadow-md overflow-hidden flex flex-col h-full cursor-pointer cyber-border" onClick={() => handleOpenProductDetails(product)}>
+                <div className="relative aspect-[4/5] w-full overflow-hidden bg-surface/50">
                     <img src={product.imageUrl} alt={product.name} className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300" />
                     {!product.available && (
                         <div className="absolute top-2 left-2 bg-on-surface text-background text-xs font-bold px-2 py-1 rounded">AGOTADO</div>
@@ -731,11 +782,11 @@ const App: React.FC = () => {
                     <div className="absolute bottom-2 right-2">
                         <button
                           onClick={(e) => { e.stopPropagation(); handleQuickAddToCart(product); }}
-                          className="bg-white/80 backdrop-blur-sm text-primary rounded-full p-2 shadow-md hover:bg-white transition-all scale-0 group-hover:scale-100 disabled:opacity-50"
+                          className="bg-surface/80 backdrop-blur-sm text-primary rounded-full p-2 shadow-md hover:bg-surface transition-all scale-0 group-hover:scale-100 disabled:opacity-50 cyber-gradient-bg"
                           aria-label="Agregar al carrito"
                           disabled={!product.available}
                         >
-                          <PlusIcon className="w-5 h-5" />
+                          <PlusIcon className="w-5 h-5 text-white" />
                         </button>
                     </div>
                      {editMode && (userData?.role === 'admin' || userData?.role === 'vendedor') && (
@@ -746,7 +797,7 @@ const App: React.FC = () => {
                                 <p className="text-white font-semibold text-sm truncate">{product.provider}</p>
                             </div>
                         )}
-                        <button onClick={(e) => {e.stopPropagation(); handleOpenProductEdit(product);}} className="bg-white text-on-surface px-3 py-1 rounded text-sm font-semibold flex items-center space-x-1">
+                        <button onClick={(e) => {e.stopPropagation(); handleOpenProductEdit(product);}} className="bg-surface text-on-surface px-3 py-1 rounded text-sm font-semibold flex items-center space-x-1">
                           <PencilIcon className="w-4 h-4"/>
                           <span>Editar</span>
                         </button>
@@ -754,12 +805,12 @@ const App: React.FC = () => {
                     )}
                 </div>
                 <div className="p-4 flex flex-col flex-grow">
-                    <h3 className="font-semibold text-sm truncate">{product.name}</h3>
+                    <h3 className="font-semibold text-sm truncate cyber-text">{product.name}</h3>
                     <div className="flex items-baseline gap-2 mt-1">
                         {hasDiscount && (
                            <span className="text-gray-500 line-through text-sm">{formatCurrency(product.price)}</span>
                         )}
-                        <span className="text-primary font-bold text-base">{formatCurrency(discountedPrice)}</span>
+                        <span className="text-primary font-bold text-base cyber-text">{formatCurrency(discountedPrice)}</span>
                     </div>
                 </div>
             </div>
@@ -890,7 +941,7 @@ const App: React.FC = () => {
         <div className="bg-background min-h-screen">
             <ToastContainer />
             <Header
-                logoUrl={config.logoUrl}
+                logoUrl={isMenTheme ? (config.secondLogoUrl || 'https://i.ibb.co/9GZ9m3z/street-legends-logo.png') : config.logoUrl}
                 cartItemCount={cartItemCount}
                 onCartClick={handleOpenCart}
                 isMobileMenuOpen={isMobileMenuOpen}
@@ -901,12 +952,14 @@ const App: React.FC = () => {
                 currentUser={currentUser}
                 onAdminClick={handleOpenAdmin}
                 onSearchClick={() => setSearchModalOpen(true)}
+                isMenTheme={isMenTheme}
             />
             
             <CategoryNav
               categories={categories}
               selectedCategory={selectedCategory}
               onSelectCategory={handleCategoryButtonClick}
+              isMenTheme={isMenTheme}
             />
 
             <main className="pt-12">
@@ -919,9 +972,9 @@ const App: React.FC = () => {
                   </>
                 )}
                 
-                <section id="productos" className="py-12 bg-surface">
+                <section id="productos" className="py-12 bg-surface transition-colors duration-500">
                     <div className="max-w-7xl 2xl:max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
-                        <h2 className="text-3xl font-serif text-center mb-8 text-on-surface">
+                        <h2 className="text-3xl font-serif text-center mb-8 text-on-surface cyber-text">
                            {selectedCategory === 'All' ? 'Todo Nuestro Catálogo' : selectedCategory}
                         </h2>
                          <div className="flex justify-center mb-8">
@@ -984,7 +1037,7 @@ const App: React.FC = () => {
               href={`https://wa.me/${config.social.whatsapp}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="fixed bottom-5 right-5 z-40 bg-primary text-white p-4 rounded-full shadow-lg hover:bg-primary-dark hover:scale-110 transition-transform duration-300"
+              className="fixed bottom-5 right-5 z-40 bg-primary text-white p-4 rounded-full shadow-lg hover:bg-primary-dark hover:scale-110 transition-transform duration-300 cyber-gradient-bg"
               aria-label="Contáctanos por WhatsApp"
             >
               <WhatsAppIcon className="w-8 h-8" />
@@ -1256,12 +1309,13 @@ const Header: React.FC<{
     selectedCategory: string,
     currentUser: FirebaseUser | null,
     onAdminClick: () => void,
-    onSearchClick: () => void
-}> = ({ logoUrl, cartItemCount, onCartClick, isMobileMenuOpen, setMobileMenuOpen, categories, onSelectCategory, selectedCategory, currentUser, onAdminClick, onSearchClick }) => {
+    onSearchClick: () => void,
+    isMenTheme?: boolean
+}> = ({ logoUrl, cartItemCount, onCartClick, isMobileMenuOpen, setMobileMenuOpen, categories, onSelectCategory, selectedCategory, currentUser, onAdminClick, onSearchClick, isMenTheme }) => {
     
     const baseLinkClasses = 'block text-lg px-4 py-3 rounded-md transition-colors';
-    const activeLinkClasses = 'bg-pink-100 text-primary font-semibold';
-    const inactiveLinkClasses = 'hover:bg-pink-100 hover:text-primary';
+    const activeLinkClasses = `font-semibold cyber-text ${isMenTheme ? 'cyber-gradient-bg text-white' : 'bg-primary/20 text-primary'}`;
+    const inactiveLinkClasses = 'hover:bg-primary/10 hover:text-primary';
 
     const handleContactClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
         e.preventDefault();
@@ -1321,16 +1375,16 @@ const Header: React.FC<{
             
             {/* Mobile Menu Panel */}
             <div 
-                className={`fixed top-0 left-0 h-full w-80 max-w-[80vw] bg-white shadow-xl flex flex-col z-[60] transition-transform duration-300 ease-in-out ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}
+                className={`fixed top-0 left-0 h-full w-80 max-w-[80vw] bg-surface shadow-xl flex flex-col z-[60] transition-transform duration-300 ease-in-out ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="mobile-menu-title"
             >
-                <div className="flex justify-between items-center p-4 border-b">
+                <div className="flex justify-between items-center p-4 border-b border-gray-200">
                      <a href="#" onClick={handleLogoClick} aria-label="Volver al inicio">
-                        <img src={logoUrl} alt="Bombon Logo" className="h-10 w-auto" id="mobile-menu-title" />
+                        <img src={logoUrl} alt="Logo" className="h-10 w-auto" id="mobile-menu-title" />
                     </a>
-                    <button onClick={() => setMobileMenuOpen(false)} className="p-2 text-on-surface rounded-full hover:bg-gray-100" aria-label="Cerrar menú">
+                    <button onClick={() => setMobileMenuOpen(false)} className="p-2 text-on-surface rounded-full hover:bg-surface" aria-label="Cerrar menú">
                         <CloseIcon className="w-6 h-6" />
                     </button>
                 </div>
@@ -1344,15 +1398,15 @@ const Header: React.FC<{
                             {cat}
                         </a>
                     ))}
-                    <div className="border-t my-4"></div>
-                    <a href="#contacto" onClick={handleContactClick} className="block text-lg px-4 py-3 rounded-md hover:bg-pink-100 hover:text-primary transition-colors">
+                    <div className="border-t border-gray-200 my-4"></div>
+                    <a href="#contacto" onClick={handleContactClick} className="block text-lg px-4 py-3 rounded-md hover:bg-primary/10 hover:text-primary transition-colors">
                         Contacto
                     </a>
                     <a href="#" onClick={(e) => {
                         e.preventDefault();
                         setMobileMenuOpen(false);
                         onAdminClick();
-                    }} className="block text-lg px-4 py-3 rounded-md hover:bg-pink-100 hover:text-primary transition-colors">
+                    }} className="block text-lg px-4 py-3 rounded-md hover:bg-primary/10 hover:text-primary transition-colors">
                         {currentUser ? 'Administrar Tienda' : 'Iniciar Sesión'}
                     </a>
                 </nav>
@@ -1365,14 +1419,15 @@ const CategoryNav: React.FC<{
     categories: Category[];
     selectedCategory: string;
     onSelectCategory: (category: Category | 'All') => void;
-}> = ({ categories, selectedCategory, onSelectCategory }) => {
+    isMenTheme?: boolean;
+}> = ({ categories, selectedCategory, onSelectCategory, isMenTheme }) => {
     return (
         <nav className="bg-surface border-b border-gray-200 sticky top-20 z-40">
             <div className="max-w-7xl 2xl:max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="flex items-center space-x-2 overflow-x-auto scrollbar-hide py-3 md:justify-center">
                     <button
                         onClick={() => onSelectCategory('All')}
-                        className={`px-4 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap transition-colors duration-200 ${selectedCategory === 'All' ? 'bg-primary text-white' : 'bg-gray-200 text-on-surface hover:bg-pink-100'}`}
+                        className={`px-4 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap transition-colors duration-200 ${selectedCategory === 'All' ? (isMenTheme ? 'cyber-gradient-bg text-white' : 'bg-primary text-white') : 'bg-surface border border-gray-200 text-on-surface hover:bg-primary/20'}`}
                     >
                         Todas
                     </button>
@@ -1380,7 +1435,7 @@ const CategoryNav: React.FC<{
                         <button
                             key={cat}
                             onClick={() => onSelectCategory(cat)}
-                            className={`px-4 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap transition-colors duration-200 ${selectedCategory === cat ? 'bg-primary text-white' : 'bg-gray-200 text-on-surface hover:bg-pink-100'}`}
+                            className={`px-4 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap transition-colors duration-200 ${selectedCategory === cat ? (isMenTheme ? 'cyber-gradient-bg text-white' : 'bg-primary text-white') : 'bg-surface border border-gray-200 text-on-surface hover:bg-primary/20'}`}
                         >
                             {cat}
                         </button>
@@ -1704,24 +1759,24 @@ const ProductDetailModal: React.FC<{
 
     return (
         <div className="fixed inset-0 bg-black/60 z-[70] flex items-center justify-center p-4" onClick={onClose}>
-            <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col md:flex-row overflow-hidden" onClick={e => e.stopPropagation()}>
-                <div className="w-full aspect-square md:aspect-auto md:h-full md:w-1/2 flex-shrink-0 bg-gray-50">
+            <div className="bg-surface rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col md:flex-row overflow-hidden cyber-border" onClick={e => e.stopPropagation()}>
+                <div className="w-full aspect-[3/4] md:aspect-auto md:h-full md:w-1/2 flex-shrink-0 bg-surface/50">
                     <img src={displayImage} alt={product.name} className="w-full h-full object-contain" />
                 </div>
                 <div className="w-full md:h-full md:w-1/2 p-6 flex flex-col overflow-y-auto relative scrollbar-hide">
                     <div className="absolute top-4 right-4 z-10">
-                        <button onClick={onClose} className="p-2 text-gray-500 bg-white/70 backdrop-blur-sm hover:text-black hover:bg-gray-100 rounded-full transition-colors">
+                        <button onClick={onClose} className="p-2 text-gray-500 bg-surface/70 backdrop-blur-sm hover:text-on-surface hover:bg-surface rounded-full transition-colors">
                             <CloseIcon className="w-6 h-6"/>
                         </button>
                     </div>
                     
-                    <h2 className="text-2xl font-bold font-serif pr-14">{product.name}</h2>
+                    <h2 className="text-2xl font-bold font-serif pr-14 cyber-text">{product.name}</h2>
 
                     <div className="flex items-baseline gap-3 my-2">
                         {hasDiscount && (
                             <span className="text-gray-500 line-through text-2xl">{formatCurrency(product.price)}</span>
                         )}
-                        <span className="text-primary font-bold text-3xl">{formatCurrency(discountedPrice)}</span>
+                        <span className="text-primary font-bold text-3xl cyber-text">{formatCurrency(discountedPrice)}</span>
                     </div>
                     <p className="text-gray-600 text-sm mb-4">{product.description}</p>
                     
@@ -1731,7 +1786,7 @@ const ProductDetailModal: React.FC<{
                             <div className="flex flex-wrap gap-2">
                                 {Object.entries(product.variants?.sizes || {}).map(([size, details]: [string, ProductVariantDetail]) => (
                                     <button key={size} onClick={() => setSelectedSize(size)} disabled={!details.available}
-                                        className={`px-4 py-2 border rounded-md text-sm transition-colors ${selectedSize === size ? 'bg-primary text-white border-primary' : 'bg-white'} ${!details.available ? 'text-gray-400 bg-gray-100 line-through cursor-not-allowed' : 'hover:border-primary'}`}
+                                        className={`px-4 py-2 border rounded-md text-sm transition-colors ${selectedSize === size ? 'bg-primary text-white border-primary' : 'bg-surface'} ${!details.available ? 'text-gray-400 bg-surface/50 line-through cursor-not-allowed' : 'hover:border-primary'}`}
                                     >{size}</button>
                                 ))}
                             </div>
@@ -1744,7 +1799,7 @@ const ProductDetailModal: React.FC<{
                             <div className="flex flex-wrap gap-2">
                                 {Object.entries(product.variants?.colors || {}).map(([color, details]: [string, ProductColorVariantDetail]) => (
                                     <button key={color} onClick={() => setSelectedColor(color)} disabled={!details.available}
-                                        className={`px-4 py-2 border rounded-md text-sm transition-colors ${selectedColor === color ? 'bg-primary text-white border-primary' : 'bg-white'} ${!details.available ? 'text-gray-400 bg-gray-100 line-through cursor-not-allowed' : 'hover:border-primary'}`}
+                                        className={`px-4 py-2 border rounded-md text-sm transition-colors ${selectedColor === color ? 'bg-primary text-white border-primary' : 'bg-surface'} ${!details.available ? 'text-gray-400 bg-surface/50 line-through cursor-not-allowed' : 'hover:border-primary'}`}
                                     >{color}</button>
                                 ))}
                             </div>
@@ -1755,7 +1810,7 @@ const ProductDetailModal: React.FC<{
                         <div className="flex items-center space-x-4">
                             <label htmlFor="quantity" className="font-semibold text-sm">Cantidad:</label>
                             <div className="flex items-center">
-                                <button onClick={() => setQuantity(q => Math.max(1, q - 1))} className="p-2 border rounded-md"><MinusIcon className="w-5 h-5"/></button>
+                                <button onClick={() => setQuantity(q => Math.max(1, q - 1))} className="p-2 border rounded-md hover:bg-surface"><MinusIcon className="w-5 h-5"/></button>
                                 <span className="text-lg font-bold w-12 text-center">{quantity}</span>
                                 <button onClick={() => setQuantity(q => {
                                     if (product.stock !== undefined && q >= product.stock) {
@@ -1763,7 +1818,7 @@ const ProductDetailModal: React.FC<{
                                         return q;
                                     }
                                     return q + 1;
-                                })} className="p-2 border rounded-md"><PlusIcon className="w-5 h-5"/></button>
+                                })} className="p-2 border rounded-md hover:bg-surface"><PlusIcon className="w-5 h-5"/></button>
                             </div>
                         </div>
 
@@ -1777,7 +1832,7 @@ const ProductDetailModal: React.FC<{
                         </button>
                     </div>
 
-                    <button onClick={() => onAddToCart(product, quantity, selectedSize, selectedColor)} disabled={isAddToCartDisabled} className="w-full bg-primary text-white py-3 rounded-md hover:bg-primary-dark transition-colors mt-auto disabled:bg-gray-400 disabled:cursor-not-allowed">
+                    <button onClick={() => onAddToCart(product, quantity, selectedSize, selectedColor)} disabled={isAddToCartDisabled} className="w-full bg-primary text-white py-3 rounded-md hover:bg-primary-dark transition-colors mt-auto disabled:bg-gray-400 disabled:cursor-not-allowed cyber-gradient-bg">
                         {product.available ? 'Agregar al Carrito' : 'Agotado'}
                     </button>
                 </div>
@@ -2356,20 +2411,31 @@ const AdminBannersTab: React.FC<{banners: Banner[], onSave: (b: Banner[]) => voi
     );
 };
 
-const AdminGeneralTab: React.FC<{config: StoreConfig, onSave: (c: StoreConfig) => void}> = ({ config, onSave }) => {
+const AdminGeneralTab: React.FC<{config: StoreConfig, onSave: (c: StoreConfig) => Promise<void> | void}> = ({ config, onSave }) => {
     const [localConfig, setLocalConfig] = useState(config);
+    const [isSaving, setIsSaving] = useState(false);
 
     useEffect(() => {
         setLocalConfig(config);
     }, [config]);
 
-    const handleSave = () => onSave(localConfig);
+    const handleSave = async () => {
+        setIsSaving(true);
+        try {
+            await onSave(localConfig);
+        } finally {
+            setIsSaving(false);
+        }
+    };
     
     return (
         <div className="p-6">
             <h1 className="text-2xl font-bold mb-6">Configuración General</h1>
             <div className="bg-white rounded-lg shadow p-6 max-w-2xl space-y-6">
-                <ImageUpload label="Logo de la Tienda" currentImage={localConfig.logoUrl} onImageSelect={url => setLocalConfig({...localConfig, logoUrl: url})} />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <ImageUpload key={`logo-${localConfig.logoUrl}`} label="Logo Bombon (Principal)" currentImage={localConfig.logoUrl} onImageSelect={url => setLocalConfig({...localConfig, logoUrl: url})} />
+                    <ImageUpload key={`second-logo-${localConfig.secondLogoUrl}`} label="Logo Street Legends (Hombre)" currentImage={localConfig.secondLogoUrl || ''} onImageSelect={url => setLocalConfig({...localConfig, secondLogoUrl: url})} />
+                </div>
                 <ImageUpload 
                     label="Imagen de Medios de Pago (Carrito)" 
                     currentImage={localConfig.paymentMethodsImageUrl || ''} 
@@ -2381,7 +2447,19 @@ const AdminGeneralTab: React.FC<{config: StoreConfig, onSave: (c: StoreConfig) =
                 <AdminInput label="Instagram (URL completa)" value={localConfig.social.instagram} onChange={e => setLocalConfig({...localConfig, social: {...localConfig.social, instagram: e.target.value}})} />
                 <AdminInput label="TikTok (URL completa)" value={localConfig.social.tiktok} onChange={e => setLocalConfig({...localConfig, social: {...localConfig.social, tiktok: e.target.value}})} />
                 <AdminInput label="Número de WhatsApp (con cód. país)" value={localConfig.social.whatsapp} onChange={e => setLocalConfig({...localConfig, social: {...localConfig.social, whatsapp: e.target.value}})} />
-                <button onClick={handleSave} className="mt-4 w-full bg-green-500 text-white px-4 py-2 rounded-md hover:bg-green-600">Guardar Configuración</button>
+                <button 
+                    onClick={handleSave} 
+                    disabled={isSaving}
+                    className="mt-4 w-full bg-green-500 text-white px-4 py-2 rounded-md hover:bg-green-600 disabled:bg-gray-400 flex items-center justify-center space-x-2"
+                >
+                    {isSaving && (
+                        <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                    )}
+                    <span>{isSaving ? 'Guardando...' : 'Guardar Configuración'}</span>
+                </button>
             </div>
         </div>
     );
