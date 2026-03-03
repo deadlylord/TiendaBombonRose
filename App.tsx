@@ -173,9 +173,15 @@ const App: React.FC = () => {
             .map((item: any) => {
                 const extension = productExtensions.find(ext => ext.docId === item.docId);
                 const categoryObj = posCategories.find(c => c.docId === item.categoryId);
+                
+                // Remove the last word from the product name (provider info)
+                const rawName = item.name || 'Producto sin nombre';
+                const words = rawName.trim().split(/\s+/);
+                const cleanedName = words.length > 1 ? words.slice(0, -1).join(' ') : rawName;
+
                 return {
                     id: item.docId,
-                    name: item.name || 'Producto sin nombre',
+                    name: cleanedName,
                     description: item.description || '',
                     price: extension?.priceOverride ?? (item.price || 0),
                     category: categoryObj?.name || item.categoryName || item.categoryId || 'General',
@@ -714,18 +720,13 @@ const App: React.FC = () => {
 
         return (
             <div className="relative group bg-white rounded-lg shadow-md overflow-hidden flex flex-col h-full cursor-pointer" onClick={() => handleOpenProductDetails(product)}>
-                <div className="relative aspect-[4/5] w-full overflow-hidden">
-                    <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                <div className="relative aspect-[4/5] w-full overflow-hidden bg-gray-50">
+                    <img src={product.imageUrl} alt={product.name} className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300" />
                     {!product.available && (
                         <div className="absolute top-2 left-2 bg-on-surface text-background text-xs font-bold px-2 py-1 rounded">AGOTADO</div>
                     )}
                     {hasDiscount && (
                         <div className="absolute top-2 right-2 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded">{product.discountPercentage}% OFF</div>
-                    )}
-                    {product.stock && product.stock <= 5 && product.stock > 0 && (
-                        <div className="absolute bottom-2 left-2 bg-yellow-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm">
-                            ¡SOLO {product.stock} UNIDADES!
-                        </div>
                     )}
                     <div className="absolute bottom-2 right-2">
                         <button
@@ -1704,8 +1705,8 @@ const ProductDetailModal: React.FC<{
     return (
         <div className="fixed inset-0 bg-black/60 z-[70] flex items-center justify-center p-4" onClick={onClose}>
             <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col md:flex-row overflow-hidden" onClick={e => e.stopPropagation()}>
-                <div className="w-full aspect-square md:aspect-auto md:h-full md:w-1/2 flex-shrink-0 bg-gray-100">
-                    <img src={displayImage} alt={product.name} className="w-full h-full object-cover" />
+                <div className="w-full aspect-square md:aspect-auto md:h-full md:w-1/2 flex-shrink-0 bg-gray-50">
+                    <img src={displayImage} alt={product.name} className="w-full h-full object-contain" />
                 </div>
                 <div className="w-full md:h-full md:w-1/2 p-6 flex flex-col overflow-y-auto relative scrollbar-hide">
                     <div className="absolute top-4 right-4 z-10">
@@ -1715,14 +1716,6 @@ const ProductDetailModal: React.FC<{
                     </div>
                     
                     <h2 className="text-2xl font-bold font-serif pr-14">{product.name}</h2>
-
-                    {product.stock !== undefined && (
-                        <div className="mt-1">
-                            <p className={`text-xs font-bold px-2 py-0.5 rounded inline-block ${product.stock <= 5 ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}>
-                                {product.stock > 0 ? `${product.stock} DISPONIBLES` : 'AGOTADO'}
-                            </p>
-                        </div>
-                    )}
 
                     <div className="flex items-baseline gap-3 my-2">
                         {hasDiscount && (
