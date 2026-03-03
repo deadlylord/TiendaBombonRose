@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Product, Category, Banner, StoreConfig, CartItem, Order, ToastMessage, ProductVariantDetail, ProductColorVariantDetail, ProductVariants, User } from './types';
 import { db, storage, auth } from './services/firebase';
+import { posDb } from './services/posFirebase';
 import { doc, getDoc, onSnapshot, setDoc, collection, addDoc, updateDoc, deleteDoc, runTransaction } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, User as FirebaseUser } from 'firebase/auth';
@@ -28,92 +29,6 @@ const initialBanners: Banner[] = [
 ];
 
 const initialCategories: Category[] = ['Blusas', 'Vestidos', 'Pantalones', 'Accesorios', 'Chaquetas', 'Bolsos'];
-
-const initialProducts: Product[] = [
-    {
-        id: 'prod1', name: 'Blusa de Seda "Aurora"', description: 'Elegante blusa de seda con un corte clásico y un tacto suave.',
-        price: 180000, category: 'Blusas', imageUrl: 'https://i.ibb.co/f2sN19v/blusa-rosa.jpg', available: true,
-        provider: 'Seda Fina SAS',
-        discountPercentage: 20,
-        variants: {
-            hasSizes: true, sizes: { 'S': { available: true }, 'M': { available: true }, 'L': { available: false } },
-            hasColors: true, colors: {
-                'Rosa Pastel': { available: true, imageUrl: 'https://i.ibb.co/f2sN19v/blusa-rosa.jpg' },
-                'Blanco Crudo': { available: true, imageUrl: 'https://i.ibb.co/GvxB2SK/blusa-blanca.jpg' }
-            }
-        }
-    },
-    {
-        id: 'prod2', name: 'Vestido "Verano Eterno"', description: 'Vestido floral perfecto para un día soleado, ligero y fresco.',
-        price: 250000, category: 'Vestidos', imageUrl: 'https://i.ibb.co/jLDhQ8T/vestido-verano.jpg', available: true,
-        provider: 'Estampados del Caribe',
-        variants: {
-            hasSizes: true, sizes: { 'S': { available: true }, 'M': { available: true }, 'L': { available: true } },
-            hasColors: false, colors: {}
-        }
-    },
-    {
-        id: 'prod3', name: 'Pantalón Palazzo "Elegancia"', description: 'Pantalón de pierna ancha que estiliza la figura.',
-        price: 220000, category: 'Pantalones', imageUrl: 'https://i.ibb.co/jWw9y1J/pantalon-negro.jpg', available: true,
-        provider: 'Confecciones Urbanas',
-        discountPercentage: 15,
-        variants: {
-            hasSizes: true, sizes: { '34': { available: true }, '36': { available: true }, '38': { available: true } },
-            hasColors: true, colors: {
-                'Negro': { available: true, imageUrl: 'https://i.ibb.co/jWw9y1J/pantalon-negro.jpg' },
-                'Beige': { available: false, imageUrl: 'https://i.ibb.co/vYJkKx6/pantalon-beige.jpg' }
-            }
-        }
-    },
-    {
-        id: 'prod4', name: 'Bolso "Tote" de Cuero', description: 'Un bolso espacioso y chic para llevar todo lo que necesitas.',
-        price: 350000, category: 'Bolsos', imageUrl: 'https://i.ibb.co/WcWz30D/bolso-marron.jpg', available: true,
-        provider: 'Marroquinería Fina',
-        variants: {
-            hasSizes: false, sizes: {},
-            hasColors: true, colors: {
-                'Marrón': { available: true, imageUrl: 'https://i.ibb.co/WcWz30D/bolso-marron.jpg' },
-                'Negro': { available: true, imageUrl: 'https://i.ibb.co/PchL1P5/bolso-negro.jpg' }
-            }
-        }
-    },
-    {
-        id: 'prod5', name: 'Falda Midi "Parisina"', description: 'Falda con pliegues y un estampado chic.',
-        price: 190000, category: 'Vestidos', imageUrl: 'https://i.ibb.co/4T7vQd4/falda-midi.jpg', available: false, // Out of stock
-        provider: 'Estampados del Caribe',
-        variants: {
-            hasSizes: true, sizes: { 'S': { available: true }, 'M': { available: false } },
-            hasColors: false, colors: {}
-        }
-    },
-    {
-        id: 'prod6', name: 'Aretes "Gota de Oro"', description: 'Aretes delicados para un toque de brillo.',
-        price: 95000, category: 'Accesorios', imageUrl: 'https://i.ibb.co/mBkwfV2/aretes-oro.jpg', available: true,
-        provider: 'Joyería Brillante',
-        variants: {
-            hasSizes: false, sizes: {},
-            hasColors: false, colors: {}
-        }
-    },
-    {
-        id: 'prod7', name: 'Chaqueta Denim "Urbana"', description: 'Chaqueta de jean clásica, un básico indispensable.',
-        price: 280000, category: 'Chaquetas', imageUrl: 'https://i.ibb.co/mGg8BMR/chaqueta-denim.jpg', available: true,
-        provider: 'Confecciones Urbanas',
-        variants: {
-            hasSizes: true, sizes: { 'S': { available: true }, 'M': { available: true } },
-            hasColors: false, colors: {}
-        }
-    },
-     {
-        id: 'prod8', name: 'Top Corto de Lino', description: 'Top fresco y versátil, ideal para combinar.',
-        price: 130000, category: 'Blusas', imageUrl: 'https://i.ibb.co/tYtK6B0/top-lino.jpg', available: true,
-        provider: 'Seda Fina SAS',
-        variants: {
-            hasSizes: true, sizes: { 'XS': { available: true }, 'S': { available: true }, 'M': { available: true } },
-            hasColors: false, colors: {}
-        }
-    }
-];
 
 // --- Helper Functions ---
 const useBrowserStorage = <T,>(key: string, initialValue: T): [T, React.Dispatch<React.SetStateAction<T>>] => {
@@ -187,10 +102,10 @@ const useFirestoreDocSync = <T extends object>(collectionName: string, docId: st
     return [data, setValue, isLoading];
 };
 
-const useFirestoreCollectionSync = <T extends {docId: string}>(collectionName: string): [T[], boolean] => {
+const useFirestoreCollectionSync = <T extends {docId: string}>(collectionName: string, dbInstance = db): [T[], boolean] => {
     const [data, setData] = useState<T[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    const collectionRef = useMemo(() => collection(db, collectionName), [collectionName]);
+    const collectionRef = useMemo(() => collection(dbInstance, collectionName), [collectionName, dbInstance]);
 
     useEffect(() => {
         const unsubscribe = onSnapshot(collectionRef,
@@ -222,11 +137,63 @@ const App: React.FC = () => {
     // Global State
     const [config, setConfig, isConfigLoading] = useFirestoreDocSync<StoreConfig>('store', 'config', initialConfig);
     const [{ list: banners }, setBannersDoc, areBannersLoading] = useFirestoreDocSync<{list: Banner[]}>('store', 'banners', { list: initialBanners });
-    const [{ list: products }, setProductsDoc, areProductsLoading] = useFirestoreDocSync<{list: Product[]}>('store', 'products', { list: initialProducts });
-    const [{ list: categories }, setCategoriesDoc, areCategoriesLoading] = useFirestoreDocSync<{list: Category[]}>('store', 'categories', { list: initialCategories });
+    const [posInventory, arePosProductsLoading] = useFirestoreCollectionSync<any>('inventory', posDb);
+    const [posCategories, arePosCategoriesLoading] = useFirestoreCollectionSync<any>('categories', posDb);
+    const [productExtensions, areExtensionsLoading] = useFirestoreCollectionSync<any>('product_extensions', db);
+    const [{ list: localCategories }, setCategoriesDoc, areLocalCategoriesLoading] = useFirestoreDocSync<{list: Category[]}>('store', 'categories', { list: initialCategories });
     const [orders, areOrdersLoading] = useFirestoreCollectionSync<Order>('orders');
     const [users, areUsersLoading] = useFirestoreCollectionSync<User>('users');
     const [cart, setCart] = useBrowserStorage<CartItem[]>('storeCart', []);
+
+    // Merge categories
+    const categories = useMemo(() => {
+        const posCatNames = posCategories.map(c => c.name).filter(Boolean);
+        const combined = Array.from(new Set([...posCatNames, ...localCategories]));
+        return combined;
+    }, [posCategories, localCategories]);
+
+    // Merge POS products with local extensions
+    const products = useMemo(() => {
+        if (!posInventory) return [];
+        
+        // Consolidate stock by name/sku (assuming name is unique enough or there's a better key)
+        const consolidated = posInventory.reduce((acc: any, item: any) => {
+            const key = item.name || item.docId;
+            if (!acc[key]) {
+                acc[key] = { ...item, stock: 0 };
+            }
+            acc[key].stock += (item.stock || 0);
+            // Keep the first valid imageUrl/description etc
+            if (!acc[key].imageUrl && item.imageUrl) acc[key].imageUrl = item.imageUrl;
+            return acc;
+        }, {});
+
+        return Object.values(consolidated)
+            .filter((item: any) => (item.stock || 0) > 0 && !item.isDisabled)
+            .map((item: any) => {
+                const extension = productExtensions.find(ext => ext.docId === item.docId);
+                const categoryObj = posCategories.find(c => c.docId === item.categoryId);
+                return {
+                    id: item.docId,
+                    name: item.name || 'Producto sin nombre',
+                    description: item.description || '',
+                    price: extension?.priceOverride ?? (item.price || 0),
+                    category: categoryObj?.name || item.categoryName || item.categoryId || 'General',
+                    imageUrl: item.imageUrl || 'https://picsum.photos/seed/product/400/500',
+                    available: (item.stock || 0) > 0,
+                    stock: item.stock || 0,
+                    provider: item.provider || '',
+                    discountPercentage: extension?.discountPercentage ?? 0,
+                    variants: extension?.variants || {
+                        hasSizes: false, sizes: {},
+                        hasColors: false, colors: {}
+                    }
+                } as Product;
+            });
+    }, [posInventory, productExtensions, posCategories]);
+    
+    const areProductsLoading = arePosProductsLoading || areExtensionsLoading || arePosCategoriesLoading;
+    const areCategoriesLoading = arePosCategoriesLoading || areLocalCategoriesLoading;
     
     // Auth State
     const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
@@ -421,10 +388,16 @@ const App: React.FC = () => {
     const handleAddToCart = (product: Product, quantity: number, size?: string, color?: string) => {
         const cartItemId = `${product.id}${size ? `-${size}` : ''}${color ? `-${color}` : ''}`;
         const existingItem = cart.find(item => item.id === cartItemId);
+        const currentQuantity = existingItem ? existingItem.quantity : 0;
+        
+        if (product.stock !== undefined && (currentQuantity + quantity) > product.stock) {
+            showToast(`No hay suficiente stock disponible. (Máx: ${product.stock})`, "error");
+            return;
+        }
 
         const hasDiscount = product.discountPercentage != null && product.discountPercentage > 0;
         const finalPrice = hasDiscount
-            ? product.price * (1 - product.discountPercentage / 100)
+            ? product.price * (1 - (product.discountPercentage || 0) / 100)
             : product.price;
         
         if (existingItem) {
@@ -476,7 +449,7 @@ const App: React.FC = () => {
 
         const hasDiscount = product.discountPercentage != null && product.discountPercentage > 0;
         const finalPrice = hasDiscount
-            ? product.price * (1 - product.discountPercentage / 100)
+            ? product.price * (1 - (product.discountPercentage || 0) / 100)
             : product.price;
         
         if (existingItem) {
@@ -569,22 +542,31 @@ const App: React.FC = () => {
     const handleSaveCategories = (newCategories: Category[]) => { setCategoriesDoc({ list: newCategories }); showToast("Categorías guardadas."); };
     
     const handleAddProduct = (newProduct: Product) => {
-      const updatedProducts = [newProduct, ...(products || [])];
-      setProductsDoc({ list: updatedProducts });
-      showToast("Producto agregado exitosamente.");
+      // In this setup, we don't add products to POS from here usually, 
+      // but if we do, we save the extension part locally.
+      const extension = {
+          priceOverride: newProduct.price,
+          discountPercentage: newProduct.discountPercentage,
+          variants: newProduct.variants
+      };
+      setDoc(doc(db, 'product_extensions', newProduct.id), extension, { merge: true });
+      showToast("Producto configurado localmente.");
     };
 
     const handleUpdateProduct = (updatedProduct: Product) => {
-      const updatedProducts = (products || []).map(p => p.id === updatedProduct.id ? updatedProduct : p);
-      setProductsDoc({ list: updatedProducts });
-      showToast("Producto actualizado exitosamente.");
+      const extension = {
+          priceOverride: updatedProduct.price,
+          discountPercentage: updatedProduct.discountPercentage,
+          variants: updatedProduct.variants
+      };
+      setDoc(doc(db, 'product_extensions', updatedProduct.id), extension, { merge: true });
+      showToast("Producto actualizado localmente.");
     };
     
     const handleDeleteProduct = (productId: string) => {
-        if (window.confirm("¿Estás seguro de que quieres eliminar este producto? Esta acción no se puede deshacer.")) {
-            const updatedProducts = (products || []).filter(p => p.id !== productId);
-            setProductsDoc({ list: updatedProducts });
-            showToast("Producto eliminado.", "error");
+        if (window.confirm("¿Estás seguro de que quieres eliminar la configuración local de este producto? El producto seguirá existiendo en el POS.")) {
+            deleteDoc(doc(db, 'product_extensions', productId));
+            showToast("Configuración local eliminada.", "error");
         }
     };
     
@@ -739,6 +721,11 @@ const App: React.FC = () => {
                     )}
                     {hasDiscount && (
                         <div className="absolute top-2 right-2 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded">{product.discountPercentage}% OFF</div>
+                    )}
+                    {product.stock && product.stock <= 5 && product.stock > 0 && (
+                        <div className="absolute bottom-2 left-2 bg-yellow-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm">
+                            ¡SOLO {product.stock} UNIDADES!
+                        </div>
                     )}
                     <div className="absolute bottom-2 right-2">
                         <button
@@ -1729,6 +1716,14 @@ const ProductDetailModal: React.FC<{
                     
                     <h2 className="text-2xl font-bold font-serif pr-14">{product.name}</h2>
 
+                    {product.stock !== undefined && (
+                        <div className="mt-1">
+                            <p className={`text-xs font-bold px-2 py-0.5 rounded inline-block ${product.stock <= 5 ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}>
+                                {product.stock > 0 ? `${product.stock} DISPONIBLES` : 'AGOTADO'}
+                            </p>
+                        </div>
+                    )}
+
                     <div className="flex items-baseline gap-3 my-2">
                         {hasDiscount && (
                             <span className="text-gray-500 line-through text-2xl">{formatCurrency(product.price)}</span>
@@ -1769,7 +1764,13 @@ const ProductDetailModal: React.FC<{
                             <div className="flex items-center">
                                 <button onClick={() => setQuantity(q => Math.max(1, q - 1))} className="p-2 border rounded-md"><MinusIcon className="w-5 h-5"/></button>
                                 <span className="text-lg font-bold w-12 text-center">{quantity}</span>
-                                <button onClick={() => setQuantity(q => q + 1)} className="p-2 border rounded-md"><PlusIcon className="w-5 h-5"/></button>
+                                <button onClick={() => setQuantity(q => {
+                                    if (product.stock !== undefined && q >= product.stock) {
+                                        showToast(`Solo hay ${product.stock} unidades disponibles`, "error");
+                                        return q;
+                                    }
+                                    return q + 1;
+                                })} className="p-2 border rounded-md"><PlusIcon className="w-5 h-5"/></button>
                             </div>
                         </div>
 
@@ -1796,7 +1797,7 @@ const InvoiceModal: React.FC<{
     onClose: () => void, cart: CartItem[], subtotal: number,
     onSubmitOrder: (order: Omit<Order, 'docId' | 'orderNumber' | 'status' | 'date'>) => void, config: StoreConfig,
     formatCurrency: (amount: number) => string
-}> = ({ onClose, cart, subtotal, onSubmitOrder, config, formatCurrency }) => {
+}> = ({ onClose, cart, subtotal, onSubmitOrder, formatCurrency }) => {
     const [customerName, setCustomerName] = useState('');
     const [customerPhone, setCustomerPhone] = useState('');
     const [deliveryMethod, setDeliveryMethod] = useState<'Recoger en Tienda' | 'Envío a Domicilio'>('Recoger en Tienda');
@@ -2018,7 +2019,7 @@ interface AdminPanelProps {
 
 const AdminPanel: React.FC<AdminPanelProps> = (props) => {
     const {
-        user, onClose, editMode, setEditMode, store,
+        user, onClose, editMode, setEditMode,
         onUpdateConfig, onSaveBanners, onSaveCategories,
         onAddProduct, onUpdateProduct, onDeleteProduct,
         formatCurrency, productToEdit, onDeleteOrder, onUpdateOrder,

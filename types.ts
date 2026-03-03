@@ -24,6 +24,7 @@ export interface Product {
   variants: ProductVariants;
   discountPercentage?: number;
   provider?: string;
+  stock?: number;
 }
 
 export type Category = string;

@@ -12,3 +12,14 @@ export const firebaseConfig = {
   appId: "1:500536160003:web:4327d0b5c591cf6f71c336",
   measurementId: "G-T9VRQSTTCJ"
 };
+
+export const productsFirebaseConfig = {
+  apiKey: "AIzaSyCsEfJKMRzfOirlzpzPag8hwlyDzEwXicU",
+  authDomain: "factura2-6e811.firebaseapp.com",
+  databaseURL: "https://factura2-6e811-default-rtdb.firebaseio.com",
+  projectId: "factura2-6e811",
+  storageBucket: "factura2-6e811.firebasestorage.app",
+  messagingSenderId: "1038601908493",
+  appId: "1:1038601908493:web:bfcaf3c4312aae287fc044",
+  measurementId: "G-1RBDBWCRDW"
+};

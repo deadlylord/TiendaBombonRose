@@ -3,16 +3,26 @@ import { initializeApp, getApps, getApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 import { getAuth } from "firebase/auth";
-import { firebaseConfig } from "./firebaseConfig";
+import { firebaseConfig, productsFirebaseConfig } from "./firebaseConfig";
 
 // Initialize Firebase, preventing re-initialization in a hot-reload environment.
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
+// Initialize the second Firebase app for products
+const productsApp = getApps().find(a => a.name === "productsApp") 
+  || initializeApp(productsFirebaseConfig, "productsApp");
+
 // Get a reference to the database service
 export const db = getFirestore(app);
+
+// Get a reference to the products database service
+export const productsDb = getFirestore(productsApp);
 
 // Get a reference to the storage service
 export const storage = getStorage(app);
 
 // Get a reference to the auth service
 export const auth = getAuth(app);
+
+// Get a reference to the products auth service
+export const productsAuth = getAuth(productsApp);
