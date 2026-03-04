@@ -138,6 +138,7 @@ const App: React.FC = () => {
     // Global State
     const [config, setConfig, isConfigLoading] = useFirestoreDocSync<StoreConfig>('store', 'config', initialConfig);
     const [{ list: banners }, setBannersDoc, areBannersLoading] = useFirestoreDocSync<{list: Banner[]}>('store', 'banners', { list: initialBanners });
+    const [{ list: menBanners }, setMenBannersDoc] = useFirestoreDocSync<{list: Banner[]}>('store', 'menBanners', { list: initialBanners });
     const [posInventory, arePosProductsLoading] = useFirestoreCollectionSync<any>('inventory', posDb);
     const [posCategories, arePosCategoriesLoading] = useFirestoreCollectionSync<any>('categories', posDb);
     const [productExtensions, areExtensionsLoading] = useFirestoreCollectionSync<any>('product_extensions', db);
@@ -595,7 +596,8 @@ const App: React.FC = () => {
             showToast("Error al guardar la configuración.");
         }
     };
-    const handleSaveBanners = (newBanners: Banner[]) => { setBannersDoc({ list: newBanners }); showToast("Banners guardados."); };
+    const handleSaveBanners = (newBanners: Banner[]) => { setBannersDoc({ list: newBanners }); showToast("Banners principales guardados."); };
+    const handleSaveMenBanners = (newBanners: Banner[]) => { setMenBannersDoc({ list: newBanners }); showToast("Banners de hombre guardados."); };
     const handleSaveCategories = (newCategories: Category[]) => { setCategoriesDoc({ list: newCategories }); showToast("Categorías guardadas."); };
     
     const handleAddProduct = (newProduct: Product) => {
@@ -917,9 +919,10 @@ const App: React.FC = () => {
                 onClose={closeModal}
                 editMode={editMode}
                 setEditMode={setEditMode}
-                store={{ config, banners, products, categories, orders, users }}
+                store={{ config, banners, menBanners, products, categories, orders, users }}
                 onUpdateConfig={handleUpdateConfig}
                 onSaveBanners={handleSaveBanners}
+                onSaveMenBanners={handleSaveMenBanners}
                 onSaveCategories={handleSaveCategories}
                 onAddProduct={handleAddProduct}
                 onUpdateProduct={handleUpdateProduct}
@@ -963,7 +966,11 @@ const App: React.FC = () => {
             />
 
             <main className="pt-12">
-                <BannerCarousel banners={banners} onNavigateToCategory={(cat) => handleCategoryButtonClick(cat as Category)} />
+                <BannerCarousel 
+                    banners={isMenTheme ? menBanners : banners} 
+                    onNavigateToCategory={(cat) => handleCategoryButtonClick(cat as Category)} 
+                    isMenTheme={isMenTheme}
+                />
                 
                 {selectedCategory === 'All' && (
                   <>
@@ -1021,6 +1028,7 @@ const App: React.FC = () => {
                 onAddSuggestedProduct={handleQuickAddFromCart} 
                 onClearCart={handleClearCart}
                 onContinueShopping={closeModal}
+                isMenTheme={isMenTheme}
             />}
             {renderAdminView()}
             {selectedProduct && <ProductDetailModal product={selectedProduct} onClose={closeModal} onAddToCart={handleAddToCart} formatCurrency={formatCurrency} showToast={showToast} />}
@@ -1446,7 +1454,7 @@ const CategoryNav: React.FC<{
     );
 };
 
-const BannerCarousel: React.FC<{ banners: Banner[]; onNavigateToCategory: (category: Category) => void; }> = ({ banners, onNavigateToCategory }) => {
+const BannerCarousel: React.FC<{ banners: Banner[]; onNavigateToCategory: (category: Category) => void; isMenTheme?: boolean; }> = ({ banners, onNavigateToCategory, isMenTheme }) => {
     const [currentIndex, setCurrentIndex] = useState(0);
 
     const nextBanner = useCallback(() => {
@@ -1474,21 +1482,21 @@ const BannerCarousel: React.FC<{ banners: Banner[]; onNavigateToCategory: (categ
     };
 
     if (!banners || banners.length === 0) {
-        return <div className="h-96 md:h-[500px] bg-gray-200 flex items-center justify-center text-gray-500">No hay banners para mostrar.</div>;
+        return <div className={`h-96 md:h-[500px] flex items-center justify-center ${isMenTheme ? 'bg-black text-gray-400' : 'bg-gray-200 text-gray-500'}`}>No hay banners para mostrar.</div>;
     }
 
     return (
-        <div className="relative w-full h-96 md:h-[500px] overflow-hidden bg-gray-100">
+        <div className={`relative w-full h-96 md:h-[500px] overflow-hidden ${isMenTheme ? 'bg-black' : 'bg-gray-100'}`}>
             {banners.map((banner, index) => (
                 <div key={banner.id} className={`absolute inset-0 transition-opacity duration-1000 ${index === currentIndex ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
                     <img src={banner.imageUrl} alt={banner.title} className="w-full h-full object-cover" />
                     <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center text-center text-white p-4">
-                        <h2 className="text-4xl md:text-6xl font-serif">{banner.title}</h2>
+                        <h2 className={`text-4xl md:text-6xl font-serif ${isMenTheme ? 'cyber-gradient-text' : ''}`}>{banner.title}</h2>
                         <p className="mt-2 text-lg md:text-xl">{banner.subtitle}</p>
                         <a 
                            href={banner.link.startsWith('category:') ? '#productos' : banner.link} 
                            onClick={(e) => handleBannerClick(e, banner)}
-                           className="mt-6 px-8 py-3 bg-primary text-white rounded-full font-semibold hover:bg-primary-dark transition-colors duration-300 shadow-lg"
+                           className={`mt-6 px-8 py-3 rounded-full font-semibold transition-colors duration-300 shadow-lg ${isMenTheme ? 'cyber-gradient-bg text-white' : 'bg-primary text-white hover:bg-primary-dark'}`}
                         >
                             Ver Colección
                         </a>
@@ -1515,7 +1523,8 @@ const CartPanel: React.FC<{
     onAddSuggestedProduct: (product: Product) => void;
     onClearCart: () => void;
     onContinueShopping: () => void;
-}> = ({ onClose, cart, subtotal, onUpdateQuantity, onRemoveItem, onCheckout, formatCurrency, suggestedProducts, onAddSuggestedProduct, onClearCart, onContinueShopping }) => {
+    isMenTheme?: boolean;
+}> = ({ onClose, cart, subtotal, onUpdateQuantity, onRemoveItem, onCheckout, formatCurrency, suggestedProducts, onAddSuggestedProduct, onClearCart, onContinueShopping, isMenTheme }) => {
     const FREE_SHIPPING_THRESHOLD = 300000;
     const missingForFreeShipping = Math.max(0, FREE_SHIPPING_THRESHOLD - subtotal);
     const progressPercentage = Math.min(100, (subtotal / FREE_SHIPPING_THRESHOLD) * 100);
@@ -1578,49 +1587,49 @@ const CartPanel: React.FC<{
 
     return (
         <div className="fixed inset-0 bg-black/60 z-[60]" onClick={onClose}>
-            <div className="fixed top-0 right-0 h-full w-full max-w-md bg-surface shadow-xl flex flex-col" onClick={e => e.stopPropagation()}>
-                <div className="flex justify-between items-center p-4 border-b bg-white">
+            <div className={`fixed top-0 right-0 h-full w-full max-w-md shadow-xl flex flex-col ${isMenTheme ? 'bg-surface text-white' : 'bg-surface text-on-surface'}`} onClick={e => e.stopPropagation()}>
+                <div className={`flex justify-between items-center p-4 border-b ${isMenTheme ? 'bg-black border-gray-800' : 'bg-white border-gray-200'}`}>
                     <div className="flex items-center space-x-2">
-                        <ShoppingBagIcon className="w-6 h-6 text-primary"/>
-                        <h2 className="text-lg font-bold uppercase tracking-wide text-on-surface">CARRITO</h2>
+                        <ShoppingBagIcon className={`w-6 h-6 ${isMenTheme ? 'cyber-gradient-text' : 'text-primary'}`}/>
+                        <h2 className="text-lg font-bold uppercase tracking-wide">CARRITO</h2>
                     </div>
-                    <button onClick={onClose} className="p-1 rounded-full hover:bg-gray-100"><CloseIcon className="w-6 h-6" /></button>
+                    <button onClick={onClose} className={`p-1 rounded-full ${isMenTheme ? 'hover:bg-gray-800' : 'hover:bg-gray-100'}`}><CloseIcon className="w-6 h-6" /></button>
                 </div>
 
                 {cart.length === 0 ? (
-                    <div className="flex-grow flex flex-col items-center justify-center text-center p-4 bg-white">
+                    <div className={`flex-grow flex flex-col items-center justify-center text-center p-4 ${isMenTheme ? 'bg-black' : 'bg-white'}`}>
                         <ShoppingBagIcon className="w-24 h-24 text-gray-300" />
                         <p className="mt-4 text-gray-500">Tu carrito está vacío.</p>
-                        <button onClick={onClose} className="mt-6 bg-primary text-white py-2 px-6 rounded-md hover:bg-primary-dark transition-colors">
+                        <button onClick={onClose} className={`mt-6 py-2 px-6 rounded-md transition-colors ${isMenTheme ? 'cyber-gradient-bg text-white' : 'bg-primary text-white hover:bg-primary-dark'}`}>
                             Seguir comprando
                         </button>
                     </div>
                 ) : (
                     <>
                     <div className="flex-grow overflow-y-auto">
-                        <div className="p-4 bg-white">
+                        <div className={`p-4 ${isMenTheme ? 'bg-black' : 'bg-white'}`}>
                             <p className="text-sm text-center mb-1">
                                 {missingForFreeShipping > 0
                                     ? `¡Te falta ${formatCurrency(missingForFreeShipping)} para obtener tu envío gratis!`
                                     : "¡Felicidades! Tienes envío gratis."}
                             </p>
-                            <div className="w-full bg-pink-100 rounded-full h-2.5">
-                                <div className="bg-primary h-2.5 rounded-full transition-all duration-500" style={{ width: `${progressPercentage}%` }}></div>
+                            <div className={`w-full rounded-full h-2.5 ${isMenTheme ? 'bg-gray-800' : 'bg-pink-100'}`}>
+                                <div className={`h-2.5 rounded-full transition-all duration-500 ${isMenTheme ? 'cyber-gradient-bg' : 'bg-primary'}`} style={{ width: `${progressPercentage}%` }}></div>
                             </div>
-                             <div className="flex justify-between text-xs mt-1 text-gray-600">
+                             <div className={`flex justify-between text-xs mt-1 ${isMenTheme ? 'text-gray-400' : 'text-gray-600'}`}>
                                 <span>{formatCurrency(subtotal)}</span>
                                 <span>{formatCurrency(FREE_SHIPPING_THRESHOLD)}</span>
                             </div>
                         </div>
 
-                        <div className="py-4 space-y-4 bg-white mt-2">
+                        <div className={`py-4 space-y-4 mt-2 ${isMenTheme ? 'bg-black' : 'bg-white'}`}>
                             {cart.map(item => (
                                 <div key={item.id} className="flex items-start space-x-4 px-4">
                                     <img src={item.imageUrl} alt={item.name} className="w-20 h-24 object-cover"/>
                                     <div className="flex-grow">
                                         <h3 className="font-semibold text-sm uppercase">{item.name}</h3>
-                                        <p className="text-sm text-gray-500">Precio: {formatCurrency(item.price)}</p>
-                                        <div className="flex items-center mt-2 border border-gray-300 w-fit">
+                                        <p className={`text-sm ${isMenTheme ? 'text-gray-400' : 'text-gray-500'}`}>Precio: {formatCurrency(item.price)}</p>
+                                        <div className={`flex items-center mt-2 border w-fit ${isMenTheme ? 'border-gray-700' : 'border-gray-300'}`}>
                                             <button onClick={() => onUpdateQuantity(item.id, item.quantity - 1)} className="px-2 py-1"><MinusIcon className="w-3 h-3"/></button>
                                             <span className="px-3 text-sm font-semibold">{item.quantity}</span>
                                             <button onClick={() => onUpdateQuantity(item.id, item.quantity + 1)} className="px-2 py-1"><PlusIcon className="w-3 h-3"/></button>
@@ -1628,8 +1637,8 @@ const CartPanel: React.FC<{
                                     </div>
                                     <div className="flex flex-col items-end justify-between h-24">
                                         <div className="flex space-x-2">
-                                            <button><HeartIcon className="w-5 h-5 text-gray-400 hover:text-primary transition-colors"/></button>
-                                            <button onClick={() => onRemoveItem(item.id)}><TrashIcon className="w-5 h-5 text-gray-400 hover:text-primary transition-colors"/></button>
+                                            <button><HeartIcon className={`w-5 h-5 transition-colors ${isMenTheme ? 'text-gray-600 hover:text-primary' : 'text-gray-400 hover:text-primary'}`}/></button>
+                                            <button onClick={() => onRemoveItem(item.id)}><TrashIcon className={`w-5 h-5 transition-colors ${isMenTheme ? 'text-gray-600 hover:text-primary' : 'text-gray-400 hover:text-primary'}`}/></button>
                                         </div>
                                         <p className="font-semibold text-sm">{formatCurrency(item.price * item.quantity)}</p>
                                     </div>
@@ -1638,7 +1647,7 @@ const CartPanel: React.FC<{
                         </div>
                         
                         {finalSuggestions.length > 0 && (
-                            <div className="py-6 bg-surface mt-2">
+                            <div className={`py-6 mt-2 ${isMenTheme ? 'bg-surface' : 'bg-surface'}`}>
                                 <h3 className="font-serif text-center text-xl mb-4">Productos que te podrían gustar</h3>
                                 <div 
                                     className="relative group/suggestions"
@@ -1650,16 +1659,16 @@ const CartPanel: React.FC<{
                                     </button>
                                     <div ref={scrollContainerRef} className="flex overflow-x-auto space-x-4 pb-2 -mx-4 px-6 scrollbar-hide">
                                         {finalSuggestions.map(product => (
-                                            <div key={product.id} className="flex-shrink-0 w-40 bg-white p-2 rounded-lg shadow-sm">
+                                            <div key={product.id} className={`flex-shrink-0 w-40 p-2 rounded-lg shadow-sm border ${isMenTheme ? 'bg-black border-gray-800' : 'bg-white border-gray-100'}`}>
                                                 <img src={product.imageUrl} alt={product.name} className="w-full h-40 object-cover" />
                                                 <div className="text-center mt-2">
                                                     <p className="text-xs font-bold uppercase truncate">{product.name}</p>
-                                                    <p className="text-sm text-primary font-semibold">{formatCurrency(product.price)}</p>
+                                                    <p className={`text-sm font-semibold ${isMenTheme ? 'cyber-gradient-text' : 'text-primary'}`}>{formatCurrency(product.price)}</p>
                                                     <button
                                                         onClick={() => onAddSuggestedProduct(product)}
-                                                        className="w-full mt-2 bg-primary text-white text-xs font-bold py-2 px-1 hover:bg-primary-dark transition-colors"
+                                                        className={`w-full mt-2 text-xs font-bold py-2 px-1 transition-colors ${isMenTheme ? 'cyber-gradient-bg text-white' : 'bg-primary text-white hover:bg-primary-dark'}`}
                                                     >
-                                                        SELECCIONAR
+                                                        AGREGAR
                                                     </button>
                                                 </div>
                                             </div>
@@ -1673,23 +1682,23 @@ const CartPanel: React.FC<{
                         )}
                     </div>
                     
-                    <div className="p-4 border-t space-y-3 bg-white">
-                         <button onClick={handleEmptyCart} className="text-center w-full text-sm text-gray-600 hover:text-primary hover:underline">Vaciar Carrito</button>
-                         <div className="flex justify-between font-bold text-lg border-t border-dashed pt-3">
+                    <div className={`p-4 border-t space-y-3 ${isMenTheme ? 'bg-black border-gray-800' : 'bg-white border-gray-200'}`}>
+                         <button onClick={handleEmptyCart} className={`text-center w-full text-sm transition-colors ${isMenTheme ? 'text-gray-400 hover:text-primary' : 'text-gray-600 hover:text-primary hover:underline'}`}>Vaciar Carrito</button>
+                         <div className={`flex justify-between font-bold text-lg border-t border-dashed pt-3 ${isMenTheme ? 'border-gray-700' : 'border-gray-200'}`}>
                             <span>Total</span>
                             <span>{formatCurrency(subtotal)}</span>
                         </div>
-                        <p className="text-xs text-gray-500 text-center">Podrás ver el costo del envío al finalizar la compra.</p>
+                        <p className={`text-xs text-center ${isMenTheme ? 'text-gray-500' : 'text-gray-500'}`}>Podrás ver el costo del envío al finalizar la compra.</p>
                         
                         <div className="grid grid-cols-2 gap-3">
-                            <button onClick={onClose} className="w-full bg-white text-primary py-3 text-sm font-bold border border-primary hover:bg-pink-50 transition-colors">
+                            <button onClick={onClose} className={`w-full py-3 text-sm font-bold border transition-colors ${isMenTheme ? 'bg-black text-white border-gray-700 hover:bg-gray-900' : 'bg-white text-primary border-primary hover:bg-pink-50'}`}>
                                 VER CARRITO
                             </button>
-                            <button onClick={onContinueShopping} className="w-full bg-white text-primary py-3 text-sm font-bold border border-primary hover:bg-pink-50 transition-colors">
+                            <button onClick={onContinueShopping} className={`w-full py-3 text-sm font-bold border transition-colors ${isMenTheme ? 'bg-black text-white border-gray-700 hover:bg-gray-900' : 'bg-white text-primary border-primary hover:bg-pink-50'}`}>
                                 SEGUIR COMPRANDO
                             </button>
                         </div>
-                        <button onClick={onCheckout} className="w-full bg-primary text-white py-3 font-bold hover:bg-primary-dark transition-colors">
+                        <button onClick={onCheckout} className={`w-full py-3 font-bold transition-all shadow-lg hover:scale-[1.02] active:scale-[0.98] ${isMenTheme ? 'cyber-gradient-bg text-white' : 'bg-primary text-white hover:bg-primary-dark'}`}>
                             FINALIZAR COMPRA
                         </button>
                     </div>
@@ -1758,82 +1767,171 @@ const ProductDetailModal: React.FC<{
     };
 
     return (
-        <div className="fixed inset-0 bg-black/60 z-[70] flex items-center justify-center p-4" onClick={onClose}>
-            <div className="bg-surface rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col md:flex-row overflow-hidden cyber-border" onClick={e => e.stopPropagation()}>
-                <div className="w-full aspect-[3/4] md:aspect-auto md:h-full md:w-1/2 flex-shrink-0 bg-surface/50">
-                    <img src={displayImage} alt={product.name} className="w-full h-full object-contain" />
+        <div className="fixed inset-0 bg-background z-[70] overflow-y-auto" onClick={onClose}>
+            <div className="min-h-screen flex flex-col md:flex-row bg-background" onClick={e => e.stopPropagation()}>
+                {/* Close Button - Floating */}
+                <button 
+                    onClick={onClose} 
+                    className="fixed top-4 right-4 z-[90] p-2 text-gray-500 bg-white/80 backdrop-blur-sm hover:text-on-surface hover:bg-white rounded-full shadow-md transition-all"
+                >
+                    <CloseIcon className="w-6 h-6"/>
+                </button>
+
+                {/* Left Column: Image */}
+                <div className="w-full md:w-[60%] bg-[#f5f5f5] md:h-screen md:sticky md:top-0 flex items-center justify-center p-4 md:p-12">
+                    <div className="w-full h-[60vh] md:h-[80vh] flex items-center justify-center overflow-hidden">
+                        <img 
+                            src={displayImage} 
+                            alt={product.name} 
+                            className="max-w-full max-h-full object-contain transition-transform duration-500 hover:scale-105" 
+                            referrerPolicy="no-referrer"
+                        />
+                    </div>
                 </div>
-                <div className="w-full md:h-full md:w-1/2 p-6 flex flex-col overflow-y-auto relative scrollbar-hide">
-                    <div className="absolute top-4 right-4 z-10">
-                        <button onClick={onClose} className="p-2 text-gray-500 bg-surface/70 backdrop-blur-sm hover:text-on-surface hover:bg-surface rounded-full transition-colors">
-                            <CloseIcon className="w-6 h-6"/>
-                        </button>
-                    </div>
-                    
-                    <h2 className="text-2xl font-bold font-serif pr-14 cyber-text">{product.name}</h2>
 
-                    <div className="flex items-baseline gap-3 my-2">
-                        {hasDiscount && (
-                            <span className="text-gray-500 line-through text-2xl">{formatCurrency(product.price)}</span>
-                        )}
-                        <span className="text-primary font-bold text-3xl cyber-text">{formatCurrency(discountedPrice)}</span>
-                    </div>
-                    <p className="text-gray-600 text-sm mb-4">{product.description}</p>
-                    
-                    {product.variants?.hasSizes && (
-                        <div className="mb-4">
-                            <h4 className="font-semibold mb-2 text-sm">Talla: <span className="font-normal text-gray-500">{selectedSize}</span></h4>
-                            <div className="flex flex-wrap gap-2">
-                                {Object.entries(product.variants?.sizes || {}).map(([size, details]: [string, ProductVariantDetail]) => (
-                                    <button key={size} onClick={() => setSelectedSize(size)} disabled={!details.available}
-                                        className={`px-4 py-2 border rounded-md text-sm transition-colors ${selectedSize === size ? 'bg-primary text-white border-primary' : 'bg-surface'} ${!details.available ? 'text-gray-400 bg-surface/50 line-through cursor-not-allowed' : 'hover:border-primary'}`}
-                                    >{size}</button>
-                                ))}
+                {/* Right Column: Content */}
+                <div className="w-full md:w-[40%] p-6 md:p-12 flex flex-col">
+                    <div className="md:sticky md:top-12">
+                        <div className="flex justify-between items-start mb-4">
+                            <div>
+                                <h1 className="text-3xl md:text-4xl font-bold font-serif mb-2 cyber-text">{product.name}</h1>
+                                <p className="text-gray-500 text-sm uppercase tracking-widest">{product.category}</p>
                             </div>
-                        </div>
-                    )}
-
-                    {product.variants?.hasColors && (
-                         <div className="mb-4">
-                            <h4 className="font-semibold mb-2 text-sm">Color: <span className="font-normal text-gray-500">{selectedColor}</span></h4>
-                            <div className="flex flex-wrap gap-2">
-                                {Object.entries(product.variants?.colors || {}).map(([color, details]: [string, ProductColorVariantDetail]) => (
-                                    <button key={color} onClick={() => setSelectedColor(color)} disabled={!details.available}
-                                        className={`px-4 py-2 border rounded-md text-sm transition-colors ${selectedColor === color ? 'bg-primary text-white border-primary' : 'bg-surface'} ${!details.available ? 'text-gray-400 bg-surface/50 line-through cursor-not-allowed' : 'hover:border-primary'}`}
-                                    >{color}</button>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-                    
-                    <div className="flex items-center justify-between my-4">
-                        <div className="flex items-center space-x-4">
-                            <label htmlFor="quantity" className="font-semibold text-sm">Cantidad:</label>
-                            <div className="flex items-center">
-                                <button onClick={() => setQuantity(q => Math.max(1, q - 1))} className="p-2 border rounded-md hover:bg-surface"><MinusIcon className="w-5 h-5"/></button>
-                                <span className="text-lg font-bold w-12 text-center">{quantity}</span>
-                                <button onClick={() => setQuantity(q => {
-                                    if (product.stock !== undefined && q >= product.stock) {
-                                        showToast(`Solo hay ${product.stock} unidades disponibles`, "error");
-                                        return q;
-                                    }
-                                    return q + 1;
-                                })} className="p-2 border rounded-md hover:bg-surface"><PlusIcon className="w-5 h-5"/></button>
-                            </div>
+                            <button 
+                                onClick={handleShareProduct} 
+                                className="p-2 text-gray-400 hover:text-primary transition-colors"
+                                title="Compartir"
+                            >
+                                <ShareIcon className="w-6 h-6"/>
+                            </button>
                         </div>
 
-                        <button 
-                            onClick={handleShareProduct} 
-                            className="flex flex-col items-center text-on-surface hover:text-primary transition-colors"
-                            aria-label="Compartir producto"
-                        >
-                            <ShareIcon className="w-6 h-6"/>
-                            <span className="text-xs">Compartir</span>
-                        </button>
-                    </div>
+                        <div className="flex items-baseline gap-4 mb-6">
+                            <span className="text-3xl font-bold text-primary cyber-text">{formatCurrency(discountedPrice)}</span>
+                            {hasDiscount && (
+                                <span className="text-xl text-gray-400 line-through">{formatCurrency(product.price)}</span>
+                            )}
+                            {hasDiscount && (
+                                <span className="bg-red-100 text-red-600 text-xs font-bold px-2 py-1 rounded">
+                                    {product.discountPercentage}% OFF
+                                </span>
+                            )}
+                        </div>
 
-                    <button onClick={() => onAddToCart(product, quantity, selectedSize, selectedColor)} disabled={isAddToCartDisabled} className="w-full bg-primary text-white py-3 rounded-md hover:bg-primary-dark transition-colors mt-auto disabled:bg-gray-400 disabled:cursor-not-allowed cyber-gradient-bg">
-                        {product.available ? 'Agregar al Carrito' : 'Agotado'}
+                        <div className="h-px bg-gray-100 w-full mb-8" />
+
+                        <div className="space-y-8">
+                            {/* Description */}
+                            <div>
+                                <h3 className="text-sm font-bold uppercase tracking-wider mb-3">Descripción</h3>
+                                <p className="text-gray-600 leading-relaxed">{product.description}</p>
+                            </div>
+
+                            {/* Variants: Sizes */}
+                            {product.variants?.hasSizes && (
+                                <div>
+                                    <div className="flex justify-between items-center mb-3">
+                                        <h3 className="text-sm font-bold uppercase tracking-wider">Talla</h3>
+                                        <span className="text-xs text-gray-400">Guía de tallas</span>
+                                    </div>
+                                    <div className="flex flex-wrap gap-3">
+                                        {Object.entries(product.variants?.sizes || {}).map(([size, details]: [string, ProductVariantDetail]) => (
+                                            <button 
+                                                key={size} 
+                                                onClick={() => setSelectedSize(size)} 
+                                                disabled={!details.available}
+                                                className={`min-w-[3rem] h-12 flex items-center justify-center border-2 rounded-lg text-sm font-medium transition-all ${
+                                                    selectedSize === size 
+                                                        ? 'border-primary bg-primary/5 text-primary' 
+                                                        : 'border-gray-100 hover:border-gray-300'
+                                                } ${!details.available ? 'opacity-30 cursor-not-allowed line-through' : ''}`}
+                                            >
+                                                {size}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Variants: Colors */}
+                            {product.variants?.hasColors && (
+                                <div>
+                                    <h3 className="text-sm font-bold uppercase tracking-wider mb-3">Color</h3>
+                                    <div className="flex flex-wrap gap-3">
+                                        {Object.entries(product.variants?.colors || {}).map(([color, details]: [string, ProductColorVariantDetail]) => (
+                                            <button 
+                                                key={color} 
+                                                onClick={() => setSelectedColor(color)} 
+                                                disabled={!details.available}
+                                                className={`px-4 h-12 flex items-center justify-center border-2 rounded-lg text-sm font-medium transition-all ${
+                                                    selectedColor === color 
+                                                        ? 'border-primary bg-primary/5 text-primary' 
+                                                        : 'border-gray-100 hover:border-gray-300'
+                                                } ${!details.available ? 'opacity-30 cursor-not-allowed' : ''}`}
+                                            >
+                                                {color}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Quantity */}
+                            <div>
+                                <h3 className="text-sm font-bold uppercase tracking-wider mb-3">Cantidad</h3>
+                                <div className="flex items-center w-32 border-2 border-gray-100 rounded-lg overflow-hidden">
+                                    <button 
+                                        onClick={() => setQuantity(q => Math.max(1, q - 1))} 
+                                        className="w-10 h-10 flex items-center justify-center hover:bg-gray-50 transition-colors"
+                                    >
+                                        <MinusIcon className="w-4 h-4"/>
+                                    </button>
+                                    <span className="flex-1 text-center font-bold">{quantity}</span>
+                                    <button 
+                                        onClick={() => setQuantity(q => {
+                                            if (product.stock !== undefined && q >= product.stock) {
+                                                showToast(`Solo hay ${product.stock} unidades disponibles`, "error");
+                                                return q;
+                                            }
+                                            return q + 1;
+                                        })} 
+                                        className="w-10 h-10 flex items-center justify-center hover:bg-gray-50 transition-colors"
+                                    >
+                                        <PlusIcon className="w-4 h-4"/>
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Desktop Add to Cart Button */}
+                            <div className="hidden md:block pt-4">
+                                <button 
+                                    onClick={() => onAddToCart(product, quantity, selectedSize, selectedColor)} 
+                                    disabled={isAddToCartDisabled} 
+                                    className="w-full bg-primary text-white py-4 rounded-xl font-bold text-lg hover:bg-primary-dark transition-all transform active:scale-[0.98] disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed shadow-lg shadow-primary/20 cyber-gradient-bg"
+                                >
+                                    {product.available ? 'Agregar al Carrito' : 'Agotado'}
+                                </button>
+                                <p className="text-center text-xs text-gray-400 mt-4">
+                                    Envío gratis en pedidos superiores a $200.000
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Mobile Fixed Add to Cart Button */}
+                <div className="md:hidden fixed bottom-0 left-0 w-full p-4 bg-white/90 backdrop-blur-md border-t border-gray-100 z-[80] flex gap-3">
+                    <div className="flex items-center border border-gray-200 rounded-lg px-2">
+                        <button onClick={() => setQuantity(q => Math.max(1, q - 1))} className="p-2"><MinusIcon className="w-4 h-4"/></button>
+                        <span className="w-8 text-center font-bold">{quantity}</span>
+                        <button onClick={() => setQuantity(q => q + 1)} className="p-2"><PlusIcon className="w-4 h-4"/></button>
+                    </div>
+                    <button 
+                        onClick={() => onAddToCart(product, quantity, selectedSize, selectedColor)} 
+                        disabled={isAddToCartDisabled} 
+                        className="flex-1 bg-primary text-white py-4 rounded-xl font-bold shadow-lg shadow-primary/20 active:scale-[0.98] transition-all disabled:bg-gray-200 cyber-gradient-bg"
+                    >
+                        {product.available ? 'Agregar' : 'Agotado'} — {formatCurrency(discountedPrice * quantity)}
                     </button>
                 </div>
             </div>
@@ -2044,6 +2142,7 @@ interface AdminPanelProps {
     store: {
         config: StoreConfig;
         banners: Banner[];
+        menBanners: Banner[];
         products: Product[];
         categories: Category[];
         orders: Order[];
@@ -2051,6 +2150,7 @@ interface AdminPanelProps {
     };
     onUpdateConfig: (config: StoreConfig) => void;
     onSaveBanners: (banners: Banner[]) => void;
+    onSaveMenBanners: (banners: Banner[]) => void;
     onSaveCategories: (categories: Category[]) => void;
     onAddProduct: (product: Product) => void;
     onUpdateProduct: (product: Product) => void;
@@ -2068,7 +2168,7 @@ interface AdminPanelProps {
 const AdminPanel: React.FC<AdminPanelProps> = (props) => {
     const {
         user, onClose, editMode, setEditMode,
-        onUpdateConfig, onSaveBanners, onSaveCategories,
+        onUpdateConfig, onSaveBanners, onSaveMenBanners, onSaveCategories,
         onAddProduct, onUpdateProduct, onDeleteProduct,
         formatCurrency, productToEdit, onDeleteOrder, onUpdateOrder,
         onLogout, onAddUser, onUpdateUserRole, onDeleteUser
@@ -2165,7 +2265,9 @@ const AdminPanel: React.FC<AdminPanelProps> = (props) => {
             case 'Banners':
                 return isAdmin ? <AdminBannersTab 
                             banners={props.store.banners}
-                            onSave={onSaveBanners}
+                            menBanners={props.store.menBanners}
+                            onSaveBanners={onSaveBanners}
+                            onSaveMenBanners={onSaveMenBanners}
                         /> : null;
             case 'General':
                 return isAdmin ? <AdminGeneralTab
@@ -2367,45 +2469,94 @@ const AdminCategoriesTab: React.FC<{categories: Category[], onSave: (cats: Categ
     );
 };
 
-const AdminBannersTab: React.FC<{banners: Banner[], onSave: (b: Banner[]) => void}> = ({ banners, onSave }) => {
+const AdminBannersTab: React.FC<{
+    banners: Banner[], 
+    menBanners: Banner[],
+    onSaveBanners: (b: Banner[]) => void,
+    onSaveMenBanners: (b: Banner[]) => void
+}> = ({ banners, menBanners, onSaveBanners, onSaveMenBanners }) => {
     const [localBanners, setLocalBanners] = useState<Banner[]>(banners || []);
+    const [localMenBanners, setLocalMenBanners] = useState<Banner[]>(menBanners || []);
     
     useEffect(() => {
         setLocalBanners(banners || []);
     }, [banners]);
 
-    const updateBanner = (id: number, field: keyof Omit<Banner, 'id'>, value: string) => {
-        setLocalBanners(localBanners.map(b => b.id === id ? { ...b, [field]: value } : b));
+    useEffect(() => {
+        setLocalMenBanners(menBanners || []);
+    }, [menBanners]);
+
+    const updateBanner = (id: number, field: keyof Omit<Banner, 'id'>, value: string, isMen: boolean) => {
+        if (isMen) {
+            setLocalMenBanners(localMenBanners.map(b => b.id === id ? { ...b, [field]: value } : b));
+        } else {
+            setLocalBanners(localBanners.map(b => b.id === id ? { ...b, [field]: value } : b));
+        }
     };
-    const addBanner = () => {
+    const addBanner = (isMen: boolean) => {
         const newBanner: Banner = { id: Date.now(), imageUrl: '', title: '', subtitle: '', link: '#' };
-        setLocalBanners([...localBanners, newBanner]);
+        if (isMen) {
+            setLocalMenBanners([...localMenBanners, newBanner]);
+        } else {
+            setLocalBanners([...localBanners, newBanner]);
+        }
     };
-    const removeBanner = (id: number) => {
-        setLocalBanners(localBanners.filter(b => b.id !== id));
+    const removeBanner = (id: number, isMen: boolean) => {
+        if (isMen) {
+            setLocalMenBanners(localMenBanners.filter(b => b.id !== id));
+        } else {
+            setLocalBanners(localBanners.filter(b => b.id !== id));
+        }
     };
 
     return (
-         <div className="p-6">
-            <div className="flex justify-between items-center mb-6">
-                <h1 className="text-2xl font-bold">Banners</h1>
-                <div>
-                    <button onClick={addBanner} className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 mr-2">Agregar Banner</button>
-                    <button onClick={() => onSave(localBanners)} className="bg-green-500 text-white px-4 py-2 rounded-md hover:bg-green-600">Guardar Banners</button>
+         <div className="p-6 space-y-12">
+            {/* Standard Banners */}
+            <div>
+                <div className="flex justify-between items-center mb-6">
+                    <h1 className="text-2xl font-bold">Banners Principales (Bombon)</h1>
+                    <div>
+                        <button onClick={() => addBanner(false)} className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 mr-2">Agregar Banner</button>
+                        <button onClick={() => onSaveBanners(localBanners)} className="bg-green-500 text-white px-4 py-2 rounded-md hover:bg-green-600">Guardar Banners</button>
+                    </div>
+                </div>
+                <div className="space-y-6">
+                    {localBanners.map(banner => (
+                        <div key={banner.id} className="bg-white rounded-lg shadow p-4 grid grid-cols-1 md:grid-cols-3 gap-4 relative">
+                            <ImageUpload label="Imagen del Banner" currentImage={banner.imageUrl} onImageSelect={url => updateBanner(banner.id, 'imageUrl', url, false)} />
+                            <div className="md:col-span-2 space-y-4">
+                                <AdminInput label="Título" value={banner.title} onChange={e => updateBanner(banner.id, 'title', e.target.value, false)} />
+                                <AdminInput label="Subtítulo" value={banner.subtitle} onChange={e => updateBanner(banner.id, 'subtitle', e.target.value, false)} />
+                                <AdminInput label="Enlace (Link)" value={banner.link} onChange={e => updateBanner(banner.id, 'link', e.target.value, false)} placeholder="Ej: #productos o category:Pantalones"/>
+                            </div>
+                            <button onClick={() => removeBanner(banner.id, false)} className="absolute top-2 right-2 text-red-500 hover:text-red-700"><TrashIcon className="w-5 h-5"/></button>
+                        </div>
+                    ))}
                 </div>
             </div>
-            <div className="space-y-6">
-                {localBanners.map(banner => (
-                    <div key={banner.id} className="bg-white rounded-lg shadow p-4 grid grid-cols-1 md:grid-cols-3 gap-4 relative">
-                        <ImageUpload label="Imagen del Banner" currentImage={banner.imageUrl} onImageSelect={url => updateBanner(banner.id, 'imageUrl', url)} />
-                        <div className="md:col-span-2 space-y-4">
-                            <AdminInput label="Título" value={banner.title} onChange={e => updateBanner(banner.id, 'title', e.target.value)} />
-                            <AdminInput label="Subtítulo" value={banner.subtitle} onChange={e => updateBanner(banner.id, 'subtitle', e.target.value)} />
-                            <AdminInput label="Enlace (Link)" value={banner.link} onChange={e => updateBanner(banner.id, 'link', e.target.value)} placeholder="Ej: #productos o category:Pantalones"/>
-                        </div>
-                        <button onClick={() => removeBanner(banner.id)} className="absolute top-2 right-2 text-red-500 hover:text-red-700"><TrashIcon className="w-5 h-5"/></button>
+
+            {/* Men Banners */}
+            <div>
+                <div className="flex justify-between items-center mb-6">
+                    <h1 className="text-2xl font-bold">Banners Hombre (Street Legends)</h1>
+                    <div>
+                        <button onClick={() => addBanner(true)} className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 mr-2">Agregar Banner</button>
+                        <button onClick={() => onSaveMenBanners(localMenBanners)} className="bg-green-500 text-white px-4 py-2 rounded-md hover:bg-green-600">Guardar Banners</button>
                     </div>
-                ))}
+                </div>
+                <div className="space-y-6">
+                    {localMenBanners.map(banner => (
+                        <div key={banner.id} className="bg-black text-white rounded-lg shadow p-4 grid grid-cols-1 md:grid-cols-3 gap-4 relative border border-gray-800">
+                            <ImageUpload label="Imagen del Banner" currentImage={banner.imageUrl} onImageSelect={url => updateBanner(banner.id, 'imageUrl', url, true)} />
+                            <div className="md:col-span-2 space-y-4">
+                                <AdminInput label="Título" value={banner.title} onChange={e => updateBanner(banner.id, 'title', e.target.value, true)} />
+                                <AdminInput label="Subtítulo" value={banner.subtitle} onChange={e => updateBanner(banner.id, 'subtitle', e.target.value, true)} />
+                                <AdminInput label="Enlace (Link)" value={banner.link} onChange={e => updateBanner(banner.id, 'link', e.target.value, true)} placeholder="Ej: #productos o category:Pantalones"/>
+                            </div>
+                            <button onClick={() => removeBanner(banner.id, true)} className="absolute top-2 right-2 text-red-500 hover:text-red-700"><TrashIcon className="w-5 h-5"/></button>
+                        </div>
+                    ))}
+                </div>
             </div>
         </div>
     );

@@ -20,6 +20,7 @@ export interface Product {
   price: number;
   category: string;
   imageUrl: string;
+  additionalImages?: string[];
   available: boolean;
   variants: ProductVariants;
   discountPercentage?: number;
