@@ -467,6 +467,46 @@ const App: React.FC = () => {
         return [...(products || [])].sort(() => Math.random() - 0.5).slice(0, 8);
     }, [products]);
 
+    const handleBulkGenerateDescriptions = async (category: string) => {
+        const productsToUpdate = products.filter(p => p.category === category);
+        if (productsToUpdate.length === 0) {
+            showToast(`No hay productos en la categoría ${category}.`, 'error');
+            return;
+        }
+
+        if (!window.confirm(`¿Estás seguro de que quieres generar descripciones con IA para los ${productsToUpdate.length} productos de la categoría "${category}"? Esto sobrescribirá las descripciones actuales.`)) {
+            return;
+        }
+        
+        showToast(`Iniciando generación masiva para ${productsToUpdate.length} productos...`);
+        
+        let successCount = 0;
+        for (const product of productsToUpdate) {
+            try {
+                const description = await generateProductDescription(product.name);
+                if (description && !description.startsWith('Error')) {
+                    const updatedProduct = { ...product, description };
+                    // We call handleUpdateProduct directly to persist each one
+                    const extension = {
+                        nameOverride: updatedProduct.name,
+                        descriptionOverride: updatedProduct.description,
+                        imageUrlOverride: updatedProduct.imageUrl,
+                        priceOverride: updatedProduct.price,
+                        discountPercentage: updatedProduct.discountPercentage,
+                        variants: updatedProduct.variants,
+                        madeInColombia: updatedProduct.madeInColombia
+                    };
+                    await setDoc(doc(db, 'product_extensions', updatedProduct.id), extension, { merge: true });
+                    successCount++;
+                }
+            } catch (err) {
+                console.error(`Error en producto ${product.name}:`, err);
+            }
+        }
+        
+        showToast(`¡Proceso completado! Se generaron ${successCount} descripciones.`);
+    };
+
     // --- EVENT HANDLERS ---
     useEffect(() => {
         if (config.logoUrl) {
@@ -607,10 +647,7 @@ const App: React.FC = () => {
             setIsMenTheme(isMen);
         }
 
-        const element = document.getElementById('productos');
-        if (element) {
-            element.scrollIntoView({ behavior: 'smooth' });
-        }
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     };
     
     const handleCategoryButtonClick = (category: Category | 'All') => {
@@ -625,10 +662,7 @@ const App: React.FC = () => {
           setIsMenTheme(isMen);
       }
 
-      const element = document.getElementById('productos');
-      if (element) {
-        element.scrollIntoView({ behavior: 'smooth' });
-      }
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     };
     
     const handleSearchAndNavigate = (term: string, category?: Category | 'All' | 'On Sale') => {
@@ -646,10 +680,7 @@ const App: React.FC = () => {
             }
         }
         setSearchModalOpen(false);
-        const element = document.getElementById('productos');
-        if (element) {
-            element.scrollIntoView({ behavior: 'smooth' });
-        }
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     };
     
     const handleInlineSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1007,6 +1038,7 @@ const App: React.FC = () => {
                 onAddProduct={handleAddProduct}
                 onUpdateProduct={handleUpdateProduct}
                 onDeleteProduct={handleDeleteProduct}
+                onBulkGenerateDescriptions={handleBulkGenerateDescriptions}
                 formatCurrency={formatCurrency}
                 productToEdit={productToEdit}
                 onDeleteOrder={handleDeleteOrder}
@@ -1046,25 +1078,63 @@ const App: React.FC = () => {
             />
 
             <main className="pt-12">
-                <BannerCarousel 
-                    banners={isMenTheme ? menBanners : banners} 
-                    onNavigateToCategory={(cat) => handleCategoryButtonClick(cat as Category)} 
-                    isMenTheme={isMenTheme}
-                />
-                
-                {selectedCategory === 'All' && (
+                {selectedCategory === 'All' ? (
                   <>
+                    <BannerCarousel 
+                        banners={isMenTheme ? menBanners : banners} 
+                        onNavigateToCategory={(cat) => handleCategoryButtonClick(cat as Category)} 
+                        isMenTheme={isMenTheme}
+                    />
+                    
                     <ProductCarousel title="Lo Nuevo" products={newArrivals} />
                     <ProductCarousel title="Más Vendidos" products={bestSellers} />
+                    
+                    <section id="productos" className="py-12 bg-surface transition-colors duration-500">
+                        <div className="max-w-7xl 2xl:max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
+                            <h2 className="text-3xl font-serif text-center mb-8 text-on-surface cyber-text">
+                               Todo Nuestro Catálogo
+                            </h2>
+                             <div className="flex justify-center mb-8">
+                                <form
+                                    className="w-full md:w-1/2"
+                                    onSubmit={(e) => {
+                                        e.preventDefault();
+                                        handleSearchAndNavigate(inlineSearchTerm);
+                                    }}
+                                >
+                                   <div className="relative w-full">
+                                       <input 
+                                           type="text" 
+                                           placeholder="Buscar productos por nombre..." 
+                                           value={inlineSearchTerm}
+                                           onChange={handleInlineSearchChange}
+                                           className="w-full bg-white border border-gray-300 rounded-full pl-10 pr-4 py-2 focus:ring-2 focus:ring-primary focus:border-primary"
+                                        />
+                                       <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                                   </div>
+                                </form>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 md:gap-6">
+                                {filteredProducts.map(product => <ProductCard key={product.id} product={product} />)}
+                            </div>
+                            {filteredProducts.length === 0 && <p className="text-center col-span-full mt-8">No se encontraron productos que coincidan con tu búsqueda.</p>}
+                        </div>
+                    </section>
                   </>
-                )}
-                
-                <section id="productos" className="py-12 bg-surface transition-colors duration-500">
+                ) : (
+                  <section className="py-12 bg-surface min-h-screen">
                     <div className="max-w-7xl 2xl:max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
-                        <h2 className="text-3xl font-serif text-center mb-8 text-on-surface cyber-text">
-                           {selectedCategory === 'All' ? 'Todo Nuestro Catálogo' : selectedCategory}
-                        </h2>
-                         <div className="flex justify-center mb-8">
+                        {/* Category Header */}
+                        <div className="mb-12 text-center">
+                            <h1 className="text-4xl md:text-5xl font-serif font-bold mb-4 text-on-surface cyber-text uppercase tracking-widest">
+                                {selectedCategory}
+                            </h1>
+                            <div className="w-24 h-1 bg-primary mx-auto rounded-full" />
+                        </div>
+
+                        {/* Inline Search for Category */}
+                        <div className="flex justify-center mb-12">
                             <form
                                 className="w-full md:w-1/2"
                                 onSubmit={(e) => {
@@ -1075,23 +1145,36 @@ const App: React.FC = () => {
                                <div className="relative w-full">
                                    <input 
                                        type="text" 
-                                       placeholder="Buscar productos por nombre..." 
+                                       placeholder={`Buscar en ${selectedCategory}...`} 
                                        value={inlineSearchTerm}
                                        onChange={handleInlineSearchChange}
-                                       className="w-full bg-white border border-gray-300 rounded-full pl-10 pr-4 py-2 focus:ring-2 focus:ring-primary focus:border-primary"
+                                       className="w-full bg-white border border-gray-300 rounded-full pl-10 pr-4 py-2 focus:ring-2 focus:ring-primary focus:border-primary shadow-sm"
                                     />
                                    <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                                </div>
                             </form>
                         </div>
 
+                        {/* Product Grid */}
                         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 md:gap-6">
                             {filteredProducts.map(product => <ProductCard key={product.id} product={product} />)}
                         </div>
-                        {filteredProducts.length === 0 && <p className="text-center col-span-full mt-8">No se encontraron productos que coincidan con tu búsqueda.</p>}
+                        
+                        {filteredProducts.length === 0 && (
+                            <div className="text-center py-20">
+                                <ShoppingBagIcon className="w-16 h-16 text-gray-200 mx-auto mb-4" />
+                                <p className="text-gray-500 text-lg">No se encontraron productos en esta categoría.</p>
+                                <button 
+                                    onClick={() => handleCategoryButtonClick('All')}
+                                    className="mt-6 text-primary font-bold hover:underline"
+                                >
+                                    Volver al catálogo completo
+                                </button>
+                            </div>
+                        )}
                     </div>
-                </section>
-                
+                  </section>
+                )}
             </main>
             
             <Footer contact={config.contact} social={config.social} onAdminClick={handleOpenAdmin} />
@@ -2293,6 +2376,7 @@ interface AdminPanelProps {
     onAddProduct: (product: Product) => void;
     onUpdateProduct: (product: Product) => void;
     onDeleteProduct: (productId: string) => void;
+    onBulkGenerateDescriptions: (category: string) => void;
     formatCurrency: (amount: number) => string;
     productToEdit: Product | null;
     onDeleteOrder: (orderDocId: string) => void;
@@ -2307,7 +2391,7 @@ const AdminPanel: React.FC<AdminPanelProps> = (props) => {
     const {
         user, onClose, editMode, setEditMode,
         onUpdateConfig, onSaveBanners, onSaveMenBanners, onSaveCategories,
-        onAddProduct, onUpdateProduct, onDeleteProduct,
+        onAddProduct, onUpdateProduct, onDeleteProduct, onBulkGenerateDescriptions,
         formatCurrency, productToEdit, onDeleteOrder, onUpdateOrder,
         onLogout, onAddUser, onUpdateUserRole, onDeleteUser
     } = props;
@@ -2392,6 +2476,7 @@ const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                             onEdit={handleEditProduct}
                             onAdd={handleAddNewProduct}
                             onDelete={onDeleteProduct}
+                            onBulkGenerateDescriptions={onBulkGenerateDescriptions}
                             formatCurrency={formatCurrency}
                             canManageProducts={canManageProducts}
                         />;
@@ -2474,10 +2559,22 @@ const AdminProductsTab: React.FC<{
     onEdit: (p: Product) => void,
     onAdd: () => void,
     onDelete: (id: string) => void,
+    onBulkGenerateDescriptions: (category: string) => void,
     formatCurrency: (n: number) => string,
     canManageProducts: boolean
-}> = ({ products, categories, onEdit, onAdd, onDelete, formatCurrency, canManageProducts }) => {
+}> = ({ products, categories, onEdit, onAdd, onDelete, onBulkGenerateDescriptions, formatCurrency, canManageProducts }) => {
     const [activeFilter, setActiveFilter] = useState('All');
+    const [isBulkGenerating, setIsBulkGenerating] = useState(false);
+
+    const handleBulkGenerate = async () => {
+        if (activeFilter === 'All') {
+            alert("Por favor, selecciona una categoría específica para generar descripciones masivas.");
+            return;
+        }
+        setIsBulkGenerating(true);
+        await onBulkGenerateDescriptions(activeFilter);
+        setIsBulkGenerating(false);
+    };
 
     const categoryCounts = useMemo(() => {
         const counts = new Map<string, number>();
@@ -2501,7 +2598,18 @@ const AdminProductsTab: React.FC<{
         <div className="p-6">
             <div className="flex justify-between items-center mb-4">
                 <h1 className="text-2xl font-bold">Productos</h1>
-                {canManageProducts && <button onClick={onAdd} className="bg-primary text-white px-4 py-2 rounded-md hover:bg-primary-dark">Agregar Producto</button>}
+                <div className="flex gap-2">
+                    {activeFilter !== 'All' && canManageProducts && (
+                        <button 
+                            onClick={handleBulkGenerate} 
+                            disabled={isBulkGenerating}
+                            className="bg-secondary text-white px-4 py-2 rounded-md hover:bg-secondary-dark disabled:opacity-50 flex items-center gap-2"
+                        >
+                            {isBulkGenerating ? 'Generando...' : '✨ IA: Describir Categoría'}
+                        </button>
+                    )}
+                    {canManageProducts && <button onClick={onAdd} className="bg-primary text-white px-4 py-2 rounded-md hover:bg-primary-dark">Agregar Producto</button>}
+                </div>
             </div>
              <div className="mb-6 p-4 bg-gray-50 rounded-lg">
                 <h3 className="font-semibold text-gray-700 mb-2">Filtrar por Categoría</h3>
