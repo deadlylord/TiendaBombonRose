@@ -32,23 +32,63 @@ const initialBanners: Banner[] = [
 
 const initialCategories: Category[] = ['Blusas', 'Vestidos', 'Pantalones', 'Accesorios', 'Chaquetas', 'Bolsos'];
 
+const colorMap: Record<string, string> = {
+    'rojo': '#ef4444',
+    'azul': '#3b82f6',
+    'verde': '#22c55e',
+    'amarillo': '#eab308',
+    'negro': '#000000',
+    'blanco': '#ffffff',
+    'gris': '#6b7280',
+    'rosado': '#ec4899',
+    'morado': '#a855f7',
+    'naranja': '#f97316',
+    'café': '#78350f',
+    'cafe': '#78350f',
+    'beige': '#f5f5dc',
+    'fucsia': '#ff00ff',
+    'lila': '#c8a2c8',
+    'celeste': '#87ceeb',
+    'turquesa': '#40e0d0',
+    'vinotinto': '#800000',
+    'mostaza': '#ffdb58',
+    'crema': '#fffdd0',
+    'militar': '#4b5320',
+    'petroleo': '#00606e',
+};
+
+const getValidColor = (colorName: string) => {
+    const lower = colorName.toLowerCase().trim();
+    return colorMap[lower] || lower;
+};
+
 // --- AI Service ---
-const generateProductDescription = async (productName: string, imageUrl: string): Promise<string> => {
+const generateProductDescription = async (productName: string): Promise<string> => {
     try {
+        if (!process.env.GEMINI_API_KEY) {
+            throw new Error("API Key de Gemini no configurada.");
+        }
         const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
         const response = await ai.models.generateContent({
             model: "gemini-3-flash-preview",
-            contents: `Genera una descripción atractiva y profesional para una tienda de ropa online llamada "Bombon Store". 
-            El producto se llama "${productName}". 
-            Usa un tono cercano, moderno y sofisticado. 
-            Resalta la calidad y el estilo. 
-            La descripción debe ser en español y tener unos 2-3 párrafos cortos.
-            Imagen del producto: ${imageUrl}`,
+            config: {
+                systemInstruction: "Eres un redactor experto en moda. Tu tarea es generar ÚNICAMENTE el texto de la descripción del producto. No incluyas saludos, introducciones, ni comentarios adicionales. Solo el contenido que el cliente verá en la tienda.",
+            },
+            contents: [{
+                parts: [{
+                    text: `Genera una descripción atractiva para una tienda de ropa llamada "Bombon Store". 
+                    Producto: "${productName}". 
+                    Tono: Moderno y sofisticado. 
+                    Idioma: Español. 
+                    Longitud: 2 párrafos cortos.
+                    No incluyas frases como "Aquí tienes la descripción" o "Espero que te guste".`
+                }]
+            }],
         });
-        return response.text || "No se pudo generar la descripción.";
+        return response.text?.trim() || "No se pudo generar la descripción.";
     } catch (error) {
         console.error("Error generating AI description:", error);
-        return "Error al generar la descripción con IA.";
+        return "Error al generar la descripción con IA. Por favor intenta de nuevo.";
     }
 };
 
@@ -205,7 +245,7 @@ const App: React.FC = () => {
                 return {
                     id: item.docId,
                     name: extension?.nameOverride ?? cleanedName,
-                    description: item.description || '',
+                    description: extension?.descriptionOverride ?? (item.description || ''),
                     price: extension?.priceOverride ?? (item.price || 0),
                     category: categoryObj?.name || item.categoryName || item.categoryId || 'General',
                     imageUrl: extension?.imageUrlOverride ?? (item.imageUrl || 'https://picsum.photos/seed/product/400/500'),
@@ -428,6 +468,18 @@ const App: React.FC = () => {
     }, [products]);
 
     // --- EVENT HANDLERS ---
+    useEffect(() => {
+        if (config.logoUrl) {
+            let link: HTMLLinkElement | null = document.querySelector("link[rel~='icon']");
+            if (!link) {
+                link = document.createElement('link');
+                link.rel = 'icon';
+                document.getElementsByTagName('head')[0].appendChild(link);
+            }
+            link.href = config.logoUrl;
+        }
+    }, [config.logoUrl]);
+
     const handleAddToCart = (product: Product, quantity: number, size?: string, color?: string) => {
         const cartItemId = `${product.id}${size ? `-${size}` : ''}${color ? `-${color}` : ''}`;
         const existingItem = cart.find(item => item.id === cartItemId);
@@ -639,6 +691,7 @@ const App: React.FC = () => {
     const handleUpdateProduct = (updatedProduct: Product) => {
       const extension = {
           nameOverride: updatedProduct.name,
+          descriptionOverride: updatedProduct.description,
           imageUrlOverride: updatedProduct.imageUrl,
           priceOverride: updatedProduct.price,
           discountPercentage: updatedProduct.discountPercentage,
@@ -1058,7 +1111,7 @@ const App: React.FC = () => {
                 isMenTheme={isMenTheme}
             />}
             {renderAdminView()}
-            {selectedProduct && <ProductDetailModal product={selectedProduct} onClose={closeModal} onAddToCart={handleAddToCart} formatCurrency={formatCurrency} showToast={showToast} allProducts={products} />}
+            {selectedProduct && <ProductDetailModal product={selectedProduct} onClose={closeModal} onAddToCart={handleAddToCart} formatCurrency={formatCurrency} showToast={showToast} allProducts={products} config={config} />}
             {isInvoiceModalOpen && <InvoiceModal onClose={() => navigate('/cart')} cart={cart} subtotal={cartSubtotal} onSubmitOrder={handleNewOrder} config={config} formatCurrency={formatCurrency} />}
             {isAddUserModalOpen && <AddUserModal onClose={() => setAddUserModalOpen(false)} onCreateUser={handleCreateUser} />}
             {isSearchModalOpen && <SearchModal 
@@ -1741,8 +1794,9 @@ const ProductDetailModal: React.FC<{
     onAddToCart: (product: Product, quantity: number, size?: string, color?: string) => void,
     formatCurrency: (amount: number) => string,
     showToast: (message: string, type?: 'success' | 'error') => void,
-    allProducts: Product[]
-}> = ({ product, onClose, onAddToCart, formatCurrency, showToast, allProducts }) => {
+    allProducts: Product[],
+    config: StoreConfig
+}> = ({ product, onClose, onAddToCart, formatCurrency, showToast, allProducts, config }) => {
     const [quantity, setQuantity] = useState(1);
     const [selectedSize, setSelectedSize] = useState<string | undefined>(undefined);
     const [selectedColor, setSelectedColor] = useState<string | undefined>(undefined);
@@ -1917,7 +1971,7 @@ const ProductDetailModal: React.FC<{
                                                     {details.imageUrl ? (
                                                         <img src={details.imageUrl} alt={color} className="absolute inset-0 w-full h-full object-cover opacity-40 group-hover:opacity-60 transition-opacity" referrerPolicy="no-referrer" />
                                                     ) : (
-                                                        <div className="w-4 h-4 rounded-full border border-gray-200 mb-1" style={{ backgroundColor: color.toLowerCase() }} />
+                                                        <div className="w-6 h-6 rounded-full border border-gray-300 mb-1 shadow-inner" style={{ backgroundColor: getValidColor(color) }} />
                                                     )}
                                                     <span className="relative z-10">{color}</span>
                                                 </button>
@@ -1955,9 +2009,11 @@ const ProductDetailModal: React.FC<{
                                 {/* Payment Methods */}
                                 <div className="pt-4 border-t border-gray-100">
                                     <h3 className="text-sm font-bold uppercase tracking-wider mb-3">Medios de Pago</h3>
-                                    <div className="flex flex-wrap gap-4 items-center opacity-70 grayscale hover:grayscale-0 transition-all">
-                                        <img src="https://i.ibb.co/QPDWf6s/medios-de-pago.png" alt="Medios de Pago" className="h-8 object-contain" referrerPolicy="no-referrer" />
-                                        <span className="text-[10px] text-gray-400 uppercase tracking-tighter">Nequi • Daviplata • Tarjetas • Addi • Sistecredito</span>
+                                    <div className="flex flex-col gap-3 opacity-80 hover:opacity-100 transition-all">
+                                        {config.paymentMethodsImageUrl && (
+                                            <img src={config.paymentMethodsImageUrl} alt="Medios de Pago" className="h-16 md:h-20 object-contain object-left" referrerPolicy="no-referrer" />
+                                        )}
+                                        <span className="text-[10px] text-gray-400 uppercase tracking-tighter font-medium">Nequi • Daviplata • Tarjetas • Addi • Sistecredito</span>
                                     </div>
                                 </div>
 
@@ -2949,7 +3005,7 @@ const ProductEditor: React.FC<{
             return;
         }
         setIsGeneratingAI(true);
-        const description = await generateProductDescription(edited.name, edited.imageUrl);
+        const description = await generateProductDescription(edited.name);
         handleChange('description', description);
         setIsGeneratingAI(false);
     };
