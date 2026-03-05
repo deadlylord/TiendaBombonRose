@@ -183,11 +183,11 @@ const App: React.FC = () => {
 
                 return {
                     id: item.docId,
-                    name: cleanedName,
+                    name: extension?.nameOverride ?? cleanedName,
                     description: item.description || '',
                     price: extension?.priceOverride ?? (item.price || 0),
                     category: categoryObj?.name || item.categoryName || item.categoryId || 'General',
-                    imageUrl: item.imageUrl || 'https://picsum.photos/seed/product/400/500',
+                    imageUrl: extension?.imageUrlOverride ?? (item.imageUrl || 'https://picsum.photos/seed/product/400/500'),
                     available: (item.stock || 0) > 0,
                     stock: item.stock || 0,
                     provider: item.provider || '',
@@ -604,6 +604,8 @@ const App: React.FC = () => {
       // In this setup, we don't add products to POS from here usually, 
       // but if we do, we save the extension part locally.
       const extension = {
+          nameOverride: newProduct.name,
+          imageUrlOverride: newProduct.imageUrl,
           priceOverride: newProduct.price,
           discountPercentage: newProduct.discountPercentage,
           variants: newProduct.variants
@@ -614,6 +616,8 @@ const App: React.FC = () => {
 
     const handleUpdateProduct = (updatedProduct: Product) => {
       const extension = {
+          nameOverride: updatedProduct.name,
+          imageUrlOverride: updatedProduct.imageUrl,
           priceOverride: updatedProduct.price,
           discountPercentage: updatedProduct.discountPercentage,
           variants: updatedProduct.variants
