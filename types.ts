@@ -26,6 +26,7 @@ export interface Product {
   discountPercentage?: number;
   provider?: string;
   stock?: number;
+  madeInColombia?: boolean;
 }
 
 export type Category = string;

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Product, Category, Banner, StoreConfig, CartItem, Order, ToastMessage, ProductVariantDetail, ProductColorVariantDetail, ProductVariants, User } from './types';
+import { GoogleGenAI } from "@google/genai";
 import { db, storage, auth } from './services/firebase';
 import { posDb } from './services/posFirebase';
 import { doc, getDoc, onSnapshot, setDoc, collection, addDoc, updateDoc, deleteDoc, runTransaction } from 'firebase/firestore';
@@ -30,6 +31,26 @@ const initialBanners: Banner[] = [
 ];
 
 const initialCategories: Category[] = ['Blusas', 'Vestidos', 'Pantalones', 'Accesorios', 'Chaquetas', 'Bolsos'];
+
+// --- AI Service ---
+const generateProductDescription = async (productName: string, imageUrl: string): Promise<string> => {
+    try {
+        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+        const response = await ai.models.generateContent({
+            model: "gemini-3-flash-preview",
+            contents: `Genera una descripción atractiva y profesional para una tienda de ropa online llamada "Bombon Store". 
+            El producto se llama "${productName}". 
+            Usa un tono cercano, moderno y sofisticado. 
+            Resalta la calidad y el estilo. 
+            La descripción debe ser en español y tener unos 2-3 párrafos cortos.
+            Imagen del producto: ${imageUrl}`,
+        });
+        return response.text || "No se pudo generar la descripción.";
+    } catch (error) {
+        console.error("Error generating AI description:", error);
+        return "Error al generar la descripción con IA.";
+    }
+};
 
 // --- Helper Functions ---
 const useBrowserStorage = <T,>(key: string, initialValue: T): [T, React.Dispatch<React.SetStateAction<T>>] => {
@@ -195,7 +216,8 @@ const App: React.FC = () => {
                     variants: extension?.variants || {
                         hasSizes: false, sizes: {},
                         hasColors: false, colors: {}
-                    }
+                    },
+                    madeInColombia: extension?.madeInColombia ?? true // Default to true as requested
                 } as Product;
             });
     }, [posInventory, productExtensions, posCategories]);
@@ -620,7 +642,8 @@ const App: React.FC = () => {
           imageUrlOverride: updatedProduct.imageUrl,
           priceOverride: updatedProduct.price,
           discountPercentage: updatedProduct.discountPercentage,
-          variants: updatedProduct.variants
+          variants: updatedProduct.variants,
+          madeInColombia: updatedProduct.madeInColombia
       };
       setDoc(doc(db, 'product_extensions', updatedProduct.id), extension, { merge: true });
       showToast("Producto actualizado localmente.");
@@ -1035,7 +1058,7 @@ const App: React.FC = () => {
                 isMenTheme={isMenTheme}
             />}
             {renderAdminView()}
-            {selectedProduct && <ProductDetailModal product={selectedProduct} onClose={closeModal} onAddToCart={handleAddToCart} formatCurrency={formatCurrency} showToast={showToast} />}
+            {selectedProduct && <ProductDetailModal product={selectedProduct} onClose={closeModal} onAddToCart={handleAddToCart} formatCurrency={formatCurrency} showToast={showToast} allProducts={products} />}
             {isInvoiceModalOpen && <InvoiceModal onClose={() => navigate('/cart')} cart={cart} subtotal={cartSubtotal} onSubmitOrder={handleNewOrder} config={config} formatCurrency={formatCurrency} />}
             {isAddUserModalOpen && <AddUserModal onClose={() => setAddUserModalOpen(false)} onCreateUser={handleCreateUser} />}
             {isSearchModalOpen && <SearchModal 
@@ -1718,10 +1741,17 @@ const ProductDetailModal: React.FC<{
     onAddToCart: (product: Product, quantity: number, size?: string, color?: string) => void,
     formatCurrency: (amount: number) => string,
     showToast: (message: string, type?: 'success' | 'error') => void,
-}> = ({ product, onClose, onAddToCart, formatCurrency, showToast }) => {
+    allProducts: Product[]
+}> = ({ product, onClose, onAddToCart, formatCurrency, showToast, allProducts }) => {
     const [quantity, setQuantity] = useState(1);
     const [selectedSize, setSelectedSize] = useState<string | undefined>(undefined);
     const [selectedColor, setSelectedColor] = useState<string | undefined>(undefined);
+
+    const relatedProducts = useMemo(() => {
+        return allProducts
+            .filter(p => p.id !== product.id && p.category === product.category)
+            .slice(0, 4);
+    }, [allProducts, product]);
 
     useEffect(() => {
       const sizes = product.variants?.sizes || {};
@@ -1772,159 +1802,207 @@ const ProductDetailModal: React.FC<{
 
     return (
         <div className="fixed inset-0 bg-background z-[70] overflow-y-auto" onClick={onClose}>
-            <div className="min-h-screen flex flex-col md:flex-row bg-background" onClick={e => e.stopPropagation()}>
-                {/* Close Button - Floating */}
-                <button 
-                    onClick={onClose} 
-                    className="fixed top-4 right-4 z-[90] p-2 text-gray-500 bg-white/80 backdrop-blur-sm hover:text-on-surface hover:bg-white rounded-full shadow-md transition-all"
-                >
-                    <CloseIcon className="w-6 h-6"/>
-                </button>
+            <div className="min-h-screen flex flex-col bg-background" onClick={e => e.stopPropagation()}>
+                <div className="flex flex-col md:flex-row">
+                    {/* Close Button - Floating */}
+                    <button 
+                        onClick={onClose} 
+                        className="fixed top-4 right-4 z-[90] p-2 text-gray-500 bg-white/80 backdrop-blur-sm hover:text-on-surface hover:bg-white rounded-full shadow-md transition-all"
+                    >
+                        <CloseIcon className="w-6 h-6"/>
+                    </button>
 
-                {/* Left Column: Image */}
-                <div className="w-full md:w-[60%] bg-[#f5f5f5] md:h-screen md:sticky md:top-0 flex items-center justify-center p-4 md:p-12">
-                    <div className="w-full h-[60vh] md:h-[80vh] flex items-center justify-center overflow-hidden">
-                        <img 
-                            src={displayImage} 
-                            alt={product.name} 
-                            className="max-w-full max-h-full object-contain transition-transform duration-500 hover:scale-105" 
-                            referrerPolicy="no-referrer"
-                        />
+                    {/* Left Column: Image */}
+                    <div className="w-full md:w-[60%] bg-[#f5f5f5] md:h-screen md:sticky md:top-0 flex items-center justify-center p-4 md:p-12">
+                        <div className="w-full h-[60vh] md:h-[80vh] flex items-center justify-center overflow-hidden">
+                            <img 
+                                src={displayImage} 
+                                alt={product.name} 
+                                className="max-w-full max-h-full object-contain transition-transform duration-500 hover:scale-105" 
+                                referrerPolicy="no-referrer"
+                            />
+                        </div>
                     </div>
-                </div>
 
-                {/* Right Column: Content */}
-                <div className="w-full md:w-[40%] p-6 md:p-12 flex flex-col">
-                    <div className="md:sticky md:top-12">
-                        <div className="flex justify-between items-start mb-4">
-                            <div>
-                                <h1 className="text-3xl md:text-4xl font-bold font-serif mb-2 cyber-text">{product.name}</h1>
-                                <p className="text-gray-500 text-sm uppercase tracking-widest">{product.category}</p>
-                            </div>
-                            <button 
-                                onClick={handleShareProduct} 
-                                className="p-2 text-gray-400 hover:text-primary transition-colors"
-                                title="Compartir"
-                            >
-                                <ShareIcon className="w-6 h-6"/>
-                            </button>
-                        </div>
-
-                        <div className="flex items-baseline gap-4 mb-6">
-                            <span className="text-3xl font-bold text-primary cyber-text">{formatCurrency(discountedPrice)}</span>
-                            {hasDiscount && (
-                                <span className="text-xl text-gray-400 line-through">{formatCurrency(product.price)}</span>
-                            )}
-                            {hasDiscount && (
-                                <span className="bg-red-100 text-red-600 text-xs font-bold px-2 py-1 rounded">
-                                    {product.discountPercentage}% OFF
-                                </span>
-                            )}
-                        </div>
-
-                        <div className="h-px bg-gray-100 w-full mb-8" />
-
-                        <div className="space-y-8">
-                            {/* Description */}
-                            <div>
-                                <h3 className="text-sm font-bold uppercase tracking-wider mb-3">Descripción</h3>
-                                <p className="text-gray-600 leading-relaxed">{product.description}</p>
-                            </div>
-
-                            {/* Variants: Sizes */}
-                            {product.variants?.hasSizes && (
+                    {/* Right Column: Content */}
+                    <div className="w-full md:w-[40%] p-6 md:p-12 flex flex-col">
+                        <div className="md:sticky md:top-12">
+                            <div className="flex justify-between items-start mb-4">
                                 <div>
-                                    <div className="flex justify-between items-center mb-3">
-                                        <h3 className="text-sm font-bold uppercase tracking-wider">Talla</h3>
-                                        <span className="text-xs text-gray-400">Guía de tallas</span>
-                                    </div>
-                                    <div className="flex flex-wrap gap-3">
-                                        {Object.entries(product.variants?.sizes || {}).map(([size, details]: [string, ProductVariantDetail]) => (
-                                            <button 
-                                                key={size} 
-                                                onClick={() => setSelectedSize(size)} 
-                                                disabled={!details.available}
-                                                className={`min-w-[3rem] h-12 flex items-center justify-center border-2 rounded-lg text-sm font-medium transition-all ${
-                                                    selectedSize === size 
-                                                        ? 'border-primary bg-primary/5 text-primary' 
-                                                        : 'border-gray-100 hover:border-gray-300'
-                                                } ${!details.available ? 'opacity-30 cursor-not-allowed line-through' : ''}`}
-                                            >
-                                                {size}
-                                            </button>
-                                        ))}
-                                    </div>
+                                    <h1 className="text-3xl md:text-4xl font-bold font-serif mb-2 cyber-text">{product.name}</h1>
+                                    <p className="text-gray-500 text-sm uppercase tracking-widest">{product.category}</p>
                                 </div>
-                            )}
-
-                            {/* Variants: Colors */}
-                            {product.variants?.hasColors && (
-                                <div>
-                                    <h3 className="text-sm font-bold uppercase tracking-wider mb-3">Color</h3>
-                                    <div className="flex flex-wrap gap-3">
-                                        {Object.entries(product.variants?.colors || {}).map(([color, details]: [string, ProductColorVariantDetail]) => (
-                                            <button 
-                                                key={color} 
-                                                onClick={() => setSelectedColor(color)} 
-                                                disabled={!details.available}
-                                                className={`px-4 h-12 flex items-center justify-center border-2 rounded-lg text-sm font-medium transition-all ${
-                                                    selectedColor === color 
-                                                        ? 'border-primary bg-primary/5 text-primary' 
-                                                        : 'border-gray-100 hover:border-gray-300'
-                                                } ${!details.available ? 'opacity-30 cursor-not-allowed' : ''}`}
-                                            >
-                                                {color}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Quantity */}
-                            <div>
-                                <h3 className="text-sm font-bold uppercase tracking-wider mb-3">Cantidad</h3>
-                                <div className="flex items-center w-32 border-2 border-gray-100 rounded-lg overflow-hidden">
-                                    <button 
-                                        onClick={() => setQuantity(q => Math.max(1, q - 1))} 
-                                        className="w-10 h-10 flex items-center justify-center hover:bg-gray-50 transition-colors"
-                                    >
-                                        <MinusIcon className="w-4 h-4"/>
-                                    </button>
-                                    <span className="flex-1 text-center font-bold">{quantity}</span>
-                                    <button 
-                                        onClick={() => setQuantity(q => {
-                                            if (product.stock !== undefined && q >= product.stock) {
-                                                showToast(`Solo hay ${product.stock} unidades disponibles`, "error");
-                                                return q;
-                                            }
-                                            return q + 1;
-                                        })} 
-                                        className="w-10 h-10 flex items-center justify-center hover:bg-gray-50 transition-colors"
-                                    >
-                                        <PlusIcon className="w-4 h-4"/>
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* Desktop Add to Cart Button */}
-                            <div className="hidden md:block pt-4">
                                 <button 
-                                    onClick={() => onAddToCart(product, quantity, selectedSize, selectedColor)} 
-                                    disabled={isAddToCartDisabled} 
-                                    className="w-full bg-primary text-white py-4 rounded-xl font-bold text-lg hover:bg-primary-dark transition-all transform active:scale-[0.98] disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed shadow-lg shadow-primary/20 cyber-gradient-bg"
+                                    onClick={handleShareProduct} 
+                                    className="p-2 text-gray-400 hover:text-primary transition-colors"
+                                    title="Compartir"
                                 >
-                                    {product.available ? 'Agregar al Carrito' : 'Agotado'}
+                                    <ShareIcon className="w-6 h-6"/>
                                 </button>
-                                <p className="text-center text-xs text-gray-400 mt-4">
-                                    Envío gratis en pedidos superiores a $200.000
-                                </p>
+                            </div>
+
+                            <div className="flex items-baseline gap-4 mb-6">
+                                <span className="text-3xl font-bold text-primary cyber-text">{formatCurrency(discountedPrice)}</span>
+                                {hasDiscount && (
+                                    <span className="text-xl text-gray-400 line-through">{formatCurrency(product.price)}</span>
+                                )}
+                                {hasDiscount && (
+                                    <span className="bg-red-100 text-red-600 text-xs font-bold px-2 py-1 rounded">
+                                        {product.discountPercentage}% OFF
+                                    </span>
+                                )}
+                            </div>
+
+                            {product.madeInColombia && (
+                                <div className="flex items-center gap-2 mb-6 text-sm font-medium text-gray-600">
+                                    <span className="w-6 h-4 bg-yellow-400 inline-block rounded-sm relative overflow-hidden">
+                                        <div className="absolute top-1/3 w-full h-1/3 bg-blue-600"></div>
+                                        <div className="absolute bottom-0 w-full h-1/3 bg-red-600"></div>
+                                    </span>
+                                    Hecho en Colombia
+                                </div>
+                            )}
+
+                            <div className="h-px bg-gray-100 w-full mb-8" />
+
+                            <div className="space-y-8">
+                                {/* Description */}
+                                <div>
+                                    <h3 className="text-sm font-bold uppercase tracking-wider mb-3">Descripción</h3>
+                                    <p className="text-gray-600 leading-relaxed whitespace-pre-line">{product.description}</p>
+                                </div>
+
+                                {/* Variants: Sizes */}
+                                {product.variants?.hasSizes && (
+                                    <div>
+                                        <div className="flex justify-between items-center mb-3">
+                                            <h3 className="text-sm font-bold uppercase tracking-wider">Talla</h3>
+                                            <span className="text-xs text-gray-400">Guía de tallas</span>
+                                        </div>
+                                        <div className="flex flex-wrap gap-3">
+                                            {Object.entries(product.variants?.sizes || {}).map(([size, details]: [string, ProductVariantDetail]) => (
+                                                <button 
+                                                    key={size} 
+                                                    onClick={() => setSelectedSize(size)} 
+                                                    disabled={!details.available}
+                                                    className={`min-w-[3rem] h-12 flex items-center justify-center border-2 rounded-lg text-sm font-medium transition-all ${
+                                                        selectedSize === size 
+                                                            ? 'border-primary bg-primary/5 text-primary' 
+                                                            : 'border-gray-100 hover:border-gray-300'
+                                                    } ${!details.available ? 'opacity-30 cursor-not-allowed line-through' : ''}`}
+                                                >
+                                                    {size}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Variants: Colors */}
+                                {product.variants?.hasColors && (
+                                    <div>
+                                        <h3 className="text-sm font-bold uppercase tracking-wider mb-3">Color</h3>
+                                        <div className="flex flex-wrap gap-3">
+                                            {Object.entries(product.variants?.colors || {}).map(([color, details]: [string, ProductColorVariantDetail]) => (
+                                                <button 
+                                                    key={color} 
+                                                    onClick={() => setSelectedColor(color)} 
+                                                    disabled={!details.available}
+                                                    className={`group relative min-w-[4rem] h-16 flex flex-col items-center justify-center border-2 rounded-lg text-xs font-medium transition-all overflow-hidden ${
+                                                        selectedColor === color 
+                                                            ? 'border-primary bg-primary/5 text-primary' 
+                                                            : 'border-gray-100 hover:border-gray-300'
+                                                    } ${!details.available ? 'opacity-30 cursor-not-allowed' : ''}`}
+                                                >
+                                                    {details.imageUrl ? (
+                                                        <img src={details.imageUrl} alt={color} className="absolute inset-0 w-full h-full object-cover opacity-40 group-hover:opacity-60 transition-opacity" referrerPolicy="no-referrer" />
+                                                    ) : (
+                                                        <div className="w-4 h-4 rounded-full border border-gray-200 mb-1" style={{ backgroundColor: color.toLowerCase() }} />
+                                                    )}
+                                                    <span className="relative z-10">{color}</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Quantity */}
+                                <div>
+                                    <h3 className="text-sm font-bold uppercase tracking-wider mb-3">Cantidad</h3>
+                                    <div className="flex items-center w-32 border-2 border-gray-100 rounded-lg overflow-hidden">
+                                        <button 
+                                            onClick={() => setQuantity(q => Math.max(1, q - 1))} 
+                                            className="w-10 h-10 flex items-center justify-center hover:bg-gray-50 transition-colors"
+                                        >
+                                            <MinusIcon className="w-4 h-4"/>
+                                        </button>
+                                        <span className="flex-1 text-center font-bold">{quantity}</span>
+                                        <button 
+                                            onClick={() => setQuantity(q => {
+                                                if (product.stock !== undefined && q >= product.stock) {
+                                                    showToast(`Solo hay ${product.stock} unidades disponibles`, "error");
+                                                    return q;
+                                                }
+                                                return q + 1;
+                                            })} 
+                                            className="w-10 h-10 flex items-center justify-center hover:bg-gray-50 transition-colors"
+                                        >
+                                            <PlusIcon className="w-4 h-4"/>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Payment Methods */}
+                                <div className="pt-4 border-t border-gray-100">
+                                    <h3 className="text-sm font-bold uppercase tracking-wider mb-3">Medios de Pago</h3>
+                                    <div className="flex flex-wrap gap-4 items-center opacity-70 grayscale hover:grayscale-0 transition-all">
+                                        <img src="https://i.ibb.co/QPDWf6s/medios-de-pago.png" alt="Medios de Pago" className="h-8 object-contain" referrerPolicy="no-referrer" />
+                                        <span className="text-[10px] text-gray-400 uppercase tracking-tighter">Nequi • Daviplata • Tarjetas • Addi • Sistecredito</span>
+                                    </div>
+                                </div>
+
+                                {/* Desktop Add to Cart Button */}
+                                <div className="hidden md:block pt-4">
+                                    <button 
+                                        onClick={() => onAddToCart(product, quantity, selectedSize, selectedColor)} 
+                                        disabled={isAddToCartDisabled} 
+                                        className="w-full bg-primary text-white py-4 rounded-xl font-bold text-lg hover:bg-primary-dark transition-all transform active:scale-[0.98] disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed shadow-lg shadow-primary/20 cyber-gradient-bg"
+                                    >
+                                        {product.available ? 'Agregar al Carrito' : 'Agotado'}
+                                    </button>
+                                    <p className="text-center text-xs text-gray-400 mt-4">
+                                        Envío gratis en pedidos superiores a $200.000
+                                    </p>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
+
+                {/* Related Products Section */}
+                {relatedProducts.length > 0 && (
+                    <div className="p-6 md:p-12 bg-white border-t border-gray-100">
+                        <h2 className="text-2xl font-bold font-serif mb-8 text-center">También te puede gustar</h2>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                            {relatedProducts.map(p => (
+                                <div key={p.id} className="group cursor-pointer" onClick={() => {
+                                    onClose();
+                                    window.location.hash = `#/product/${p.id}`;
+                                }}>
+                                    <div className="aspect-[3/4] bg-gray-50 rounded-xl overflow-hidden mb-3 relative">
+                                        <img src={p.imageUrl} alt={p.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" referrerPolicy="no-referrer" />
+                                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
+                                    </div>
+                                    <h3 className="font-bold text-sm truncate">{p.name}</h3>
+                                    <p className="text-primary font-bold">{formatCurrency(p.price)}</p>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
 
                 {/* Mobile Fixed Add to Cart Button */}
-                <div className="md:hidden fixed bottom-0 left-0 w-full p-4 bg-white/90 backdrop-blur-md border-t border-gray-100 z-[80] flex gap-3">
+                <div className="md:hidden sticky bottom-0 left-0 w-full p-4 bg-white/90 backdrop-blur-md border-t border-gray-100 z-[80] flex gap-3">
                     <div className="flex items-center border border-gray-200 rounded-lg px-2">
                         <button onClick={() => setQuantity(q => Math.max(1, q - 1))} className="p-2"><MinusIcon className="w-4 h-4"/></button>
                         <span className="w-8 text-center font-bold">{quantity}</span>
@@ -2859,9 +2937,21 @@ const ProductEditor: React.FC<{
     const [edited, setEdited] = useState(product);
     const [newSize, setNewSize] = useState('');
     const [newColor, setNewColor] = useState('');
+    const [isGeneratingAI, setIsGeneratingAI] = useState(false);
 
     const handleChange = (field: keyof Product, value: any) => {
         setEdited(p => ({ ...p, [field]: value }));
+    };
+
+    const handleGenerateAIDescription = async () => {
+        if (!edited.name || !edited.imageUrl) {
+            alert("Necesitas un nombre y una imagen para generar la descripción.");
+            return;
+        }
+        setIsGeneratingAI(true);
+        const description = await generateProductDescription(edited.name, edited.imageUrl);
+        handleChange('description', description);
+        setIsGeneratingAI(false);
     };
 
     const handleVariantChange = (field: keyof ProductVariants, value: any) => {
@@ -2937,8 +3027,21 @@ const ProductEditor: React.FC<{
                     <AdminInput label="Nombre del Producto" value={edited.name} onChange={e => handleChange('name', e.target.value)} />
                     <AdminInput label="Proveedor" value={edited.provider || ''} onChange={e => handleChange('provider', e.target.value)} placeholder="Ej: Confecciones ABC" />
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Descripción</label>
+                        <div className="flex justify-between items-center mb-1">
+                            <label className="block text-sm font-medium text-gray-700">Descripción</label>
+                            <button 
+                                onClick={handleGenerateAIDescription} 
+                                disabled={isGeneratingAI}
+                                className="text-xs text-primary font-bold flex items-center gap-1 hover:underline disabled:opacity-50"
+                            >
+                                {isGeneratingAI ? 'Generando...' : '✨ Generar con IA'}
+                            </button>
+                        </div>
                         <textarea value={edited.description} onChange={e => handleChange('description', e.target.value)} rows={4} className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"/>
+                    </div>
+                    <div className="flex items-center space-x-2 mb-4">
+                        <input type="checkbox" id="madeInColombia" checked={edited.madeInColombia ?? true} onChange={e => handleChange('madeInColombia', e.target.checked)} className="h-4 w-4 text-primary rounded border-gray-300 focus:ring-primary" />
+                        <label htmlFor="madeInColombia" className="text-sm font-medium text-gray-700">Hecho en Colombia</label>
                     </div>
                     <div className="grid grid-cols-3 gap-4">
                         <AdminInput label="Precio (COP)" type="number" value={edited.price} onChange={e => handleChange('price', parseFloat(e.target.value) || 0)} />
