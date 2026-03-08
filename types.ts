@@ -27,6 +27,7 @@ export interface Product {
   provider?: string;
   stock?: number;
   madeInColombia?: boolean;
+  createdAt?: number;
 }
 
 export type Category = string;

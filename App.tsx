@@ -1,6 +1,7 @@
 
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { motion, AnimatePresence } from "motion/react";
 import { Product, Category, Banner, StoreConfig, CartItem, Order, ToastMessage, ProductVariantDetail, ProductColorVariantDetail, ProductVariants, User } from './types';
 import { GoogleGenAI } from "@google/genai";
 import { db, storage, auth } from './services/firebase';
@@ -242,6 +243,14 @@ const App: React.FC = () => {
                 const words = rawName.trim().split(/\s+/);
                 const cleanedName = words.length > 1 ? words.slice(0, -1).join(' ') : rawName;
 
+                const getCreatedAt = (it: any) => {
+                    if (!it.createdAt) return 0;
+                    if (typeof it.createdAt === 'number') return it.createdAt;
+                    if (it.createdAt.toMillis) return it.createdAt.toMillis();
+                    if (it.createdAt.seconds) return it.createdAt.seconds * 1000;
+                    return new Date(it.createdAt).getTime() || 0;
+                };
+
                 return {
                     id: item.docId,
                     name: extension?.nameOverride ?? cleanedName,
@@ -257,7 +266,8 @@ const App: React.FC = () => {
                         hasSizes: false, sizes: {},
                         hasColors: false, colors: {}
                     },
-                    madeInColombia: extension?.madeInColombia ?? true // Default to true as requested
+                    madeInColombia: extension?.madeInColombia ?? true, // Default to true as requested
+                    createdAt: getCreatedAt(item)
                 } as Product;
             });
     }, [posInventory, productExtensions, posCategories]);
@@ -462,7 +472,11 @@ const App: React.FC = () => {
         });
     }, [products, selectedCategory, searchTerm]);
 
-    const newArrivals = useMemo(() => [...(products || [])].sort((a,b) => b.id.localeCompare(a.id)).slice(0, 6), [products]);
+    const newArrivals = useMemo(() => {
+        return [...(products || [])]
+            .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+            .slice(0, 6);
+    }, [products]);
     const bestSellers = useMemo(() => {
         return [...(products || [])].sort(() => Math.random() - 0.5).slice(0, 8);
     }, [products]);
@@ -1078,8 +1092,15 @@ const App: React.FC = () => {
             />
 
             <main className="pt-12">
+              <AnimatePresence mode="wait">
                 {selectedCategory === 'All' ? (
-                  <>
+                  <motion.div 
+                    key="all"
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -20 }}
+                    transition={{ duration: 0.3 }}
+                  >
                     <BannerCarousel 
                         banners={isMenTheme ? menBanners : banners} 
                         onNavigateToCategory={(cat) => handleCategoryButtonClick(cat as Category)} 
@@ -1102,15 +1123,15 @@ const App: React.FC = () => {
                                         handleSearchAndNavigate(inlineSearchTerm);
                                     }}
                                 >
-                                   <div className="relative w-full">
+                                   <div className="relative w-full group">
                                        <input 
                                            type="text" 
                                            placeholder="Buscar productos por nombre..." 
                                            value={inlineSearchTerm}
                                            onChange={handleInlineSearchChange}
-                                           className="w-full bg-white border border-gray-300 rounded-full pl-10 pr-4 py-2 focus:ring-2 focus:ring-primary focus:border-primary"
+                                           className="w-full bg-white border border-gray-300 rounded-full pl-12 pr-4 py-3 focus:ring-2 focus:ring-primary focus:border-primary shadow-sm transition-all duration-300 group-hover:shadow-md"
                                         />
-                                       <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                                       <SearchIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 transition-colors duration-300 group-focus-within:text-primary" />
                                    </div>
                                 </form>
                             </div>
@@ -1121,20 +1142,42 @@ const App: React.FC = () => {
                             {filteredProducts.length === 0 && <p className="text-center col-span-full mt-8">No se encontraron productos que coincidan con tu búsqueda.</p>}
                         </div>
                     </section>
-                  </>
+                  </motion.div>
                 ) : (
-                  <section className="py-12 bg-surface min-h-screen">
+                  <motion.section 
+                    key={selectedCategory}
+                    initial={{ opacity: 0, scale: 0.98 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 1.02 }}
+                    transition={{ duration: 0.4, ease: "easeOut" }}
+                    className="py-12 bg-surface min-h-screen"
+                  >
                     <div className="max-w-7xl 2xl:max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
                         {/* Category Header */}
-                        <div className="mb-12 text-center">
+                        <motion.div 
+                            initial={{ y: -20, opacity: 0 }}
+                            animate={{ y: 0, opacity: 1 }}
+                            transition={{ delay: 0.2, duration: 0.5 }}
+                            className="mb-12 text-center"
+                        >
                             <h1 className="text-4xl md:text-5xl font-serif font-bold mb-4 text-on-surface cyber-text uppercase tracking-widest">
                                 {selectedCategory}
                             </h1>
-                            <div className="w-24 h-1 bg-primary mx-auto rounded-full" />
-                        </div>
+                            <motion.div 
+                                initial={{ width: 0 }}
+                                animate={{ width: 96 }}
+                                transition={{ delay: 0.4, duration: 0.6 }}
+                                className="h-1 bg-primary mx-auto rounded-full" 
+                            />
+                        </motion.div>
 
                         {/* Inline Search for Category */}
-                        <div className="flex justify-center mb-12">
+                        <motion.div 
+                            initial={{ y: 20, opacity: 0 }}
+                            animate={{ y: 0, opacity: 1 }}
+                            transition={{ delay: 0.3, duration: 0.5 }}
+                            className="flex justify-center mb-12"
+                        >
                             <form
                                 className="w-full md:w-1/2"
                                 onSubmit={(e) => {
@@ -1142,26 +1185,35 @@ const App: React.FC = () => {
                                     handleSearchAndNavigate(inlineSearchTerm);
                                 }}
                             >
-                               <div className="relative w-full">
+                               <div className="relative w-full group">
                                    <input 
                                        type="text" 
                                        placeholder={`Buscar en ${selectedCategory}...`} 
                                        value={inlineSearchTerm}
                                        onChange={handleInlineSearchChange}
-                                       className="w-full bg-white border border-gray-300 rounded-full pl-10 pr-4 py-2 focus:ring-2 focus:ring-primary focus:border-primary shadow-sm"
+                                       className="w-full bg-white border border-gray-300 rounded-full pl-12 pr-4 py-3 focus:ring-2 focus:ring-primary focus:border-primary shadow-sm transition-all duration-300 group-hover:shadow-md hover:border-primary/50"
                                     />
-                                   <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                                   <SearchIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 transition-colors duration-300 group-focus-within:text-primary" />
                                </div>
                             </form>
-                        </div>
+                        </motion.div>
 
                         {/* Product Grid */}
-                        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 md:gap-6">
+                        <motion.div 
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            transition={{ delay: 0.4, duration: 0.5 }}
+                            className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 md:gap-6"
+                        >
                             {filteredProducts.map(product => <ProductCard key={product.id} product={product} />)}
-                        </div>
+                        </motion.div>
                         
                         {filteredProducts.length === 0 && (
-                            <div className="text-center py-20">
+                            <motion.div 
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                className="text-center py-20"
+                            >
                                 <ShoppingBagIcon className="w-16 h-16 text-gray-200 mx-auto mb-4" />
                                 <p className="text-gray-500 text-lg">No se encontraron productos en esta categoría.</p>
                                 <button 
@@ -1170,11 +1222,12 @@ const App: React.FC = () => {
                                 >
                                     Volver al catálogo completo
                                 </button>
-                            </div>
+                            </motion.div>
                         )}
                     </div>
-                  </section>
+                  </motion.section>
                 )}
+              </AnimatePresence>
             </main>
             
             <Footer contact={config.contact} social={config.social} onAdminClick={handleOpenAdmin} />
