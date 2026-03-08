@@ -899,7 +899,7 @@ const App: React.FC = () => {
         return (
             <div className="relative group bg-surface rounded-lg shadow-md overflow-hidden flex flex-col h-full cursor-pointer cyber-border" onClick={() => handleOpenProductDetails(product)}>
                 <div className="relative aspect-[4/5] w-full overflow-hidden bg-surface/50">
-                    <img src={product.imageUrl} alt={product.name} className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300" />
+                    <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" referrerPolicy="no-referrer" />
                     {!product.available && (
                         <div className="absolute top-2 left-2 bg-on-surface text-background text-xs font-bold px-2 py-1 rounded">AGOTADO</div>
                     )}
