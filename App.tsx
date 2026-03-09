@@ -64,39 +64,88 @@ const getValidColor = (colorName: string) => {
 };
 
 // --- AI Service ---
-const generateProductDescription = async (productName: string): Promise<string> => {
+const urlToBase64 = async (url: string): Promise<{ data: string, mimeType: string } | null> => {
+    try {
+        const response = await fetch(url);
+        const blob = await response.blob();
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                const base64data = (reader.result as string).split(',')[1];
+                resolve({ data: base64data, mimeType: blob.type });
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+        });
+    } catch (error) {
+        console.error("Error converting URL to base64:", error);
+        return null;
+    }
+};
+
+const generateProductDescription = async (productName: string, imageUrl?: string): Promise<{ name: string, description: string } | string> => {
     try {
         const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
         if (!apiKey) {
-            return "Error: API Key de Gemini no configurada en el entorno.";
+            return "Error: No se encontró la clave de API de Gemini. Por favor, configúrala en el menú 'Settings' de AI Studio (arriba a la derecha).";
         }
         
         const ai = new GoogleGenAI({ apiKey });
+        
+        const parts: any[] = [{
+            text: `Genera una descripción atractiva y muy breve para una tienda de ropa llamada "Bombon Store". 
+            Producto actual: "${productName}". 
+            Tono: Moderno y sofisticado. 
+            Idioma: Español. 
+            Instrucciones: 
+            1. Analiza la imagen adjunta para destacar materiales, texturas, accesorios o detalles específicos que se vean.
+            2. Sugiere un NOMBRE CORTO y llamativo para el producto (máximo 4 palabras).
+            3. Genera una DESCRIPCIÓN de máximo 30 palabras en un solo párrafo.
+            
+            Responde ÚNICAMENTE en formato JSON con la siguiente estructura:
+            {
+              "name": "nombre sugerido",
+              "description": "descripción sugerida"
+            }`
+        }];
+
+        if (imageUrl) {
+            const imageData = await urlToBase64(imageUrl);
+            if (imageData) {
+                parts.push({
+                    inlineData: {
+                        data: imageData.data,
+                        mimeType: imageData.mimeType
+                    }
+                });
+            }
+        }
+
         const response = await ai.models.generateContent({
             model: "gemini-3-flash-preview",
             config: {
-                systemInstruction: "Eres un redactor experto en moda. Tu tarea es generar ÚNICAMENTE el texto de la descripción del producto. No incluyas saludos, introducciones, ni comentarios adicionales. Solo el contenido que el cliente verá en la tienda.",
+                systemInstruction: "Eres un redactor experto en moda y branding. Tu tarea es generar un nombre corto y una descripción para productos de ropa. Responde siempre en formato JSON puro, sin markdown ni texto adicional.",
+                responseMimeType: "application/json"
             },
-            contents: [{
-                parts: [{
-                    text: `Genera una descripción atractiva para una tienda de ropa llamada "Bombon Store". 
-                    Producto: "${productName}". 
-                    Tono: Moderno y sofisticado. 
-                    Idioma: Español. 
-                    Longitud: 2 párrafos cortos.
-                    No incluyas frases como "Aquí tienes la descripción" o "Espero que te guste".`
-                }]
-            }]
+            contents: [{ parts }]
         });
 
         if (!response.text) {
             return "Error: La IA devolvió una respuesta vacía.";
         }
 
-        return response.text.trim();
+        try {
+            const result = JSON.parse(response.text.trim());
+            return {
+                name: result.name || productName,
+                description: result.description || "Sin descripción generada."
+            };
+        } catch (e) {
+            console.error("Error parsing AI JSON:", e);
+            return response.text.trim(); // Fallback to raw text if not JSON
+        }
     } catch (error: any) {
         console.error("Error generating AI description:", error);
-        // Provide more context in the error message for the user
         const errorMsg = error.message || "Error desconocido";
         if (errorMsg.includes("API key not valid")) {
             return "Error: La API Key de Gemini no es válida.";
@@ -512,9 +561,9 @@ const App: React.FC = () => {
         let successCount = 0;
         for (const product of productsToUpdate) {
             try {
-                const description = await generateProductDescription(product.name);
-                if (description && !description.startsWith('Error')) {
-                    const updatedProduct = { ...product, description };
+                const result = await generateProductDescription(product.name, product.imageUrl);
+                if (result && typeof result === 'object' && !('startsWith' in result)) {
+                    const updatedProduct = { ...product, description: result.description, name: result.name };
                     // We call handleUpdateProduct directly to persist each one
                     const extension = {
                         nameOverride: updatedProduct.name,
@@ -1122,8 +1171,8 @@ const App: React.FC = () => {
                         isMenTheme={isMenTheme}
                     />
                     
-                    <ProductCarousel title="Lo Nuevo" products={newArrivals} />
-                    <ProductCarousel title="Más Vendidos" products={bestSellers} />
+                    <ProductCarousel title="Recién llegados ✨🆕" products={newArrivals} />
+                    <ProductCarousel title="En tendencia en redes 🔥📱" products={bestSellers} />
                     
                     <section id="productos" className="py-12 bg-surface transition-colors duration-500">
                         <div className="max-w-7xl 2xl:max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -1721,7 +1770,7 @@ const BannerCarousel: React.FC<{ banners: Banner[]; onNavigateToCategory: (categ
             {banners.map((banner, index) => (
                 <div key={banner.id} className={`absolute inset-0 transition-opacity duration-1000 ${index === currentIndex ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
                     <img src={banner.imageUrl} alt={banner.title} className="w-full h-full object-cover" />
-                    <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center text-center text-white p-4">
+                    <div className="absolute inset-0 bg-black/20 flex flex-col items-center justify-center text-center text-white p-4">
                         <h2 className={`text-4xl md:text-6xl font-serif ${isMenTheme ? 'cyber-gradient-text' : ''}`}>{banner.title}</h2>
                         <p className="mt-2 text-lg md:text-xl">{banner.subtitle}</p>
                         <a 
@@ -2162,7 +2211,7 @@ const ProductDetailModal: React.FC<{
                                     <h3 className="text-sm font-bold uppercase tracking-wider mb-3">Medios de Pago</h3>
                                     <div className="flex flex-col gap-3 opacity-80 hover:opacity-100 transition-all">
                                         {config.paymentMethodsImageUrl && (
-                                            <img src={config.paymentMethodsImageUrl} alt="Medios de Pago" className="h-16 md:h-20 object-contain object-left" referrerPolicy="no-referrer" />
+                                            <img src={config.paymentMethodsImageUrl} alt="Medios de Pago" className="w-full md:w-auto h-auto md:h-20 object-contain object-left" referrerPolicy="no-referrer" />
                                         )}
                                         <span className="text-[10px] text-gray-400 uppercase tracking-tighter font-medium">Nequi • Daviplata • Tarjetas • Addi • Sistecredito</span>
                                     </div>
@@ -3212,8 +3261,14 @@ const ProductEditor: React.FC<{
             return;
         }
         setIsGeneratingAI(true);
-        const description = await generateProductDescription(edited.name);
-        handleChange('description', description);
+        const result = await generateProductDescription(edited.name, edited.imageUrl);
+        if (typeof result === 'object') {
+            setEdited(p => ({ ...p, name: result.name, description: result.description }));
+        } else if (typeof result === 'string' && !result.startsWith('Error')) {
+            handleChange('description', result);
+        } else if (typeof result === 'string') {
+            alert(result);
+        }
         setIsGeneratingAI(false);
     };
 
