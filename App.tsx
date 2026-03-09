@@ -68,25 +68,43 @@ const generateProductDescription = async (productName: string): Promise<string> 
     try {
         const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
         if (!apiKey) {
-            throw new Error("API Key de Gemini no configurada.");
+            return "Error: API Key de Gemini no configurada en el entorno.";
         }
+        
         const ai = new GoogleGenAI({ apiKey });
         const response = await ai.models.generateContent({
             model: "gemini-3-flash-preview",
             config: {
                 systemInstruction: "Eres un redactor experto en moda. Tu tarea es generar ÚNICAMENTE el texto de la descripción del producto. No incluyas saludos, introducciones, ni comentarios adicionales. Solo el contenido que el cliente verá en la tienda.",
             },
-            contents: `Genera una descripción atractiva para una tienda de ropa llamada "Bombon Store". 
-            Producto: "${productName}". 
-            Tono: Moderno y sofisticado. 
-            Idioma: Español. 
-            Longitud: 2 párrafos cortos.
-            No incluyas frases como "Aquí tienes la descripción" o "Espero que te guste".`
+            contents: [{
+                parts: [{
+                    text: `Genera una descripción atractiva para una tienda de ropa llamada "Bombon Store". 
+                    Producto: "${productName}". 
+                    Tono: Moderno y sofisticado. 
+                    Idioma: Español. 
+                    Longitud: 2 párrafos cortos.
+                    No incluyas frases como "Aquí tienes la descripción" o "Espero que te guste".`
+                }]
+            }]
         });
-        return response.text?.trim() || "No se pudo generar la descripción.";
-    } catch (error) {
+
+        if (!response.text) {
+            return "Error: La IA devolvió una respuesta vacía.";
+        }
+
+        return response.text.trim();
+    } catch (error: any) {
         console.error("Error generating AI description:", error);
-        return "Error al generar la descripción con IA. Por favor intenta de nuevo.";
+        // Provide more context in the error message for the user
+        const errorMsg = error.message || "Error desconocido";
+        if (errorMsg.includes("API key not valid")) {
+            return "Error: La API Key de Gemini no es válida.";
+        }
+        if (errorMsg.includes("model not found") || errorMsg.includes("404")) {
+            return "Error: El modelo de IA solicitado no está disponible actualmente.";
+        }
+        return `Error al generar descripción: ${errorMsg}`;
     }
 };
 
