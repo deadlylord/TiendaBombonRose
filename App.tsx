@@ -66,25 +66,22 @@ const getValidColor = (colorName: string) => {
 // --- AI Service ---
 const generateProductDescription = async (productName: string): Promise<string> => {
     try {
-        if (!process.env.GEMINI_API_KEY) {
+        const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
+        if (!apiKey) {
             throw new Error("API Key de Gemini no configurada.");
         }
-        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+        const ai = new GoogleGenAI({ apiKey });
         const response = await ai.models.generateContent({
             model: "gemini-3-flash-preview",
             config: {
                 systemInstruction: "Eres un redactor experto en moda. Tu tarea es generar ÚNICAMENTE el texto de la descripción del producto. No incluyas saludos, introducciones, ni comentarios adicionales. Solo el contenido que el cliente verá en la tienda.",
             },
-            contents: [{
-                parts: [{
-                    text: `Genera una descripción atractiva para una tienda de ropa llamada "Bombon Store". 
-                    Producto: "${productName}". 
-                    Tono: Moderno y sofisticado. 
-                    Idioma: Español. 
-                    Longitud: 2 párrafos cortos.
-                    No incluyas frases como "Aquí tienes la descripción" o "Espero que te guste".`
-                }]
-            }],
+            contents: `Genera una descripción atractiva para una tienda de ropa llamada "Bombon Store". 
+            Producto: "${productName}". 
+            Tono: Moderno y sofisticado. 
+            Idioma: Español. 
+            Longitud: 2 párrafos cortos.
+            No incluyas frases como "Aquí tienes la descripción" o "Espero que te guste".`
         });
         return response.text?.trim() || "No se pudo generar la descripción.";
     } catch (error) {
@@ -2685,7 +2682,38 @@ const AdminProductsTab: React.FC<{
                 </div>
             </div>
             <div className="bg-white rounded-lg shadow overflow-hidden">
-                <table className="w-full">
+                {/* Mobile View: Card List */}
+                <div className="md:hidden divide-y divide-gray-200">
+                    {filteredDisplayProducts.length === 0 && (
+                        <div className="text-center py-8 text-gray-500">No hay productos en esta categoría.</div>
+                    )}
+                    {filteredDisplayProducts.map(p => (
+                        <div key={p.id} className="p-4 space-y-3">
+                            <div className="flex items-center space-x-4">
+                                <img src={p.imageUrl} alt={p.name} className="w-16 h-20 object-cover rounded-md" />
+                                <div className="flex-grow min-w-0">
+                                    <h3 className="text-sm font-bold text-gray-900 truncate">{p.name}</h3>
+                                    <p className="text-xs text-gray-500">{p.category}</p>
+                                    <p className="text-sm font-semibold text-primary">{formatCurrency(p.price)}</p>
+                                </div>
+                                <div className="flex flex-col items-end space-y-2">
+                                    <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${p.available ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                                        {p.available ? 'DISPONIBLE' : 'AGOTADO'}
+                                    </span>
+                                </div>
+                            </div>
+                            {canManageProducts && (
+                                <div className="flex gap-2 pt-2 border-t border-gray-100">
+                                    <button onClick={() => onEdit(p)} className="flex-1 bg-primary/10 text-primary font-bold py-2 rounded-md text-xs">EDITAR</button>
+                                    <button onClick={() => onDelete(p.id)} className="flex-1 bg-red-50 text-red-600 font-bold py-2 rounded-md text-xs">ELIMINAR</button>
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </div>
+
+                {/* Desktop View: Table */}
+                <table className="hidden md:table w-full">
                     <thead className="bg-gray-50">
                         <tr>
                             <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Imagen</th>
