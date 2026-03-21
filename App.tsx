@@ -325,6 +325,7 @@ const App: React.FC = () => {
                     available: (item.stock || 0) > 0,
                     stock: item.stock || 0,
                     provider: item.provider || '',
+                    rawName: rawName,
                     discountPercentage: extension?.discountPercentage ?? 0,
                     variants: extension?.variants || {
                         hasSizes: false, sizes: {},
@@ -525,8 +526,11 @@ const App: React.FC = () => {
             
             const searchableText = `
                 ${product.name} 
+                ${product.rawName || ''}
                 ${product.description} 
-                ${product.category}`
+                ${product.category}
+                ${product.provider || ''}
+                ${product.id}`
             .toLowerCase();
             
             // All search words must be present in the searchable text

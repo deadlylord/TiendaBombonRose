@@ -25,6 +25,7 @@ export interface Product {
   variants: ProductVariants;
   discountPercentage?: number;
   provider?: string;
+  rawName?: string;
   stock?: number;
   madeInColombia?: boolean;
   createdAt?: number;
