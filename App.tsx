@@ -13,7 +13,7 @@ import { onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndP
 import {
   CartIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, InstagramIcon, MenuIcon,
   SearchIcon, TikTokIcon, WhatsAppIcon, TrashIcon, PlusIcon, MinusIcon,
-  PencilIcon, UploadIcon, ShareIcon, HeartIcon, ShoppingBagIcon
+  PencilIcon, UploadIcon, ShareIcon, HeartIcon, ShoppingBagIcon, ArrowLeftIcon, PlayIcon
 } from './components/Icons';
 
 // --- MOCK DATA (Initial values for Firestore) ---
@@ -349,7 +349,7 @@ const App: React.FC = () => {
     const [isMobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [isCartOpen, setCartOpen] = useState(false);
     const [isAdminOpen, setAdminOpen] = useState(false);
-    const [isSearchModalOpen, setSearchModalOpen] = useState(false);
+    const [isSearching, setIsSearching] = useState(false);
     const [isInvoiceModalOpen, setInvoiceModalOpen] = useState(false);
     const [isAddUserModalOpen, setAddUserModalOpen] = useState(false);
     const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -363,7 +363,6 @@ const App: React.FC = () => {
     // Search & Filter State
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedCategory, setSelectedCategory] = useState<Category | 'All' | 'On Sale'>('All');
-    const [inlineSearchTerm, setInlineSearchTerm] = useState('');
 
     // Admin State
     const [editMode, setEditMode] = useState(false);
@@ -379,11 +378,6 @@ const App: React.FC = () => {
             root.removeAttribute('data-theme');
         }
     }, [isMenTheme]);
-
-    // Sync global search term to inline search input
-    useEffect(() => {
-        setInlineSearchTerm(searchTerm);
-    }, [searchTerm]);
 
     // --- ROUTING LOGIC ---
     const [currentPath, setCurrentPath] = useState(window.location.hash);
@@ -403,10 +397,11 @@ const App: React.FC = () => {
         const isAdminRoute = route === '/admin';
         const isCartRoute = route === '/cart';
         const isCheckoutRoute = route === '/checkout';
+        const isSearchRoute = route === '/search';
 
         // Close secondary (non-routed) modals if a primary one is opening
-        if (productMatch || isAdminRoute || isCartRoute || isCheckoutRoute) {
-            setSearchModalOpen(false);
+        if (productMatch || isAdminRoute || isCartRoute || isCheckoutRoute || isSearchRoute) {
+            setIsSearching(isSearchRoute);
             setAddUserModalOpen(false);
         }
 
@@ -524,14 +519,7 @@ const App: React.FC = () => {
 
             const searchWords = searchTermClean.split(/\s+/).filter(Boolean);
             
-            const searchableText = `
-                ${product.name} 
-                ${product.rawName || ''}
-                ${product.description} 
-                ${product.category}
-                ${product.provider || ''}
-                ${product.id}`
-            .toLowerCase();
+            const searchableText = `${product.name} ${product.rawName || ''}`.toLowerCase();
             
             // All search words must be present in the searchable text
             const matchesSearch = searchWords.every(word => searchableText.includes(word));
@@ -761,16 +749,16 @@ const App: React.FC = () => {
                 setIsMenTheme(isMen);
             }
         }
-        setSearchModalOpen(false);
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-    };
-    
-    const handleInlineSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const newTerm = e.target.value;
-        setInlineSearchTerm(newTerm);
-        if (newTerm === '') {
-            setSearchTerm('');
+        
+        if (term === '' && category === undefined) {
+            // Back button case
+            setSelectedCategory('All');
+            setIsSearching(false);
+            navigate('/');
+        } else if (window.location.hash !== '#/search') {
+            setIsSearching(false);
         }
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     };
     
     // --- ADMIN CRUD HANDLERS ---
@@ -960,58 +948,6 @@ const App: React.FC = () => {
         </div>
     );
     
-    const ProductCard: React.FC<{ product: Product }> = ({ product }) => {
-        const hasDiscount = product.discountPercentage != null && product.discountPercentage > 0;
-        const discountedPrice = hasDiscount ? product.price * (1 - product.discountPercentage! / 100) : product.price;
-
-        return (
-            <div className="relative group bg-surface rounded-lg shadow-md overflow-hidden flex flex-col h-full cursor-pointer cyber-border" onClick={() => handleOpenProductDetails(product)}>
-                <div className="relative aspect-[4/5] w-full overflow-hidden bg-surface/50">
-                    <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" referrerPolicy="no-referrer" />
-                    {!product.available && (
-                        <div className="absolute top-2 left-2 bg-on-surface text-background text-xs font-bold px-2 py-1 rounded">AGOTADO</div>
-                    )}
-                    {hasDiscount && (
-                        <div className="absolute top-2 right-2 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded">{product.discountPercentage}% OFF</div>
-                    )}
-                    <div className="absolute bottom-2 right-2">
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleQuickAddToCart(product); }}
-                          className="bg-surface/80 backdrop-blur-sm text-primary rounded-full p-2 shadow-md hover:bg-surface transition-all scale-0 group-hover:scale-100 disabled:opacity-50 cyber-gradient-bg"
-                          aria-label="Agregar al carrito"
-                          disabled={!product.available}
-                        >
-                          <PlusIcon className="w-5 h-5 text-white" />
-                        </button>
-                    </div>
-                     {editMode && (userData?.role === 'admin' || userData?.role === 'vendedor') && (
-                      <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center space-y-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        {product.provider && (
-                            <div className="text-center px-2">
-                                <span className="text-xs font-bold text-gray-300 uppercase tracking-wider">Proveedor</span>
-                                <p className="text-white font-semibold text-sm truncate">{product.provider}</p>
-                            </div>
-                        )}
-                        <button onClick={(e) => {e.stopPropagation(); handleOpenProductEdit(product);}} className="bg-surface text-on-surface px-3 py-1 rounded text-sm font-semibold flex items-center space-x-1">
-                          <PencilIcon className="w-4 h-4"/>
-                          <span>Editar</span>
-                        </button>
-                      </div>
-                    )}
-                </div>
-                <div className="p-4 flex flex-col flex-grow">
-                    <h3 className="font-semibold text-sm truncate cyber-text">{product.name}</h3>
-                    <div className="flex items-baseline gap-2 mt-1">
-                        {hasDiscount && (
-                           <span className="text-gray-500 line-through text-sm">{formatCurrency(product.price)}</span>
-                        )}
-                        <span className="text-primary font-bold text-base cyber-text">{formatCurrency(discountedPrice)}</span>
-                    </div>
-                </div>
-            </div>
-        );
-    };
-
     const ProductCarousel: React.FC<{ title: string; products: Product[] }> = ({ title, products: carouselProducts }) => {
         const scrollContainerRef = useRef<HTMLDivElement>(null);
         const intervalRef = useRef<number | null>(null);
@@ -1074,7 +1010,15 @@ const App: React.FC = () => {
                   <div ref={scrollContainerRef} className="flex overflow-x-auto space-x-6 pb-4 -mx-4 px-4 scrollbar-hide">
                       {carouselProducts.map(product => (
                           <div key={product.id} className="flex-shrink-0 w-64 sm:w-72">
-                              <ProductCard product={product} />
+                              <ProductCard 
+                                  product={product} 
+                                  onOpenDetails={handleOpenProductDetails}
+                                  onQuickAdd={handleQuickAddToCart}
+                                  editMode={editMode}
+                                  userRole={userData?.role}
+                                  onOpenEdit={handleOpenProductEdit}
+                                  formatCurrency={formatCurrency}
+                              />
                           </div>
                       ))}
                   </div>
@@ -1134,6 +1078,8 @@ const App: React.FC = () => {
     }
 
     // --- MAIN RENDER ---
+    (window as any).storeContext = { config };
+    
     return (
         <div className="bg-background min-h-screen">
             <ToastContainer />
@@ -1148,7 +1094,7 @@ const App: React.FC = () => {
                 selectedCategory={selectedCategory}
                 currentUser={currentUser}
                 onAdminClick={handleOpenAdmin}
-                onSearchClick={() => setSearchModalOpen(true)}
+                onSearchClick={() => navigate('/search')}
                 isMenTheme={isMenTheme}
             />
             
@@ -1161,7 +1107,73 @@ const App: React.FC = () => {
 
             <main className="pt-12">
               <AnimatePresence mode="wait">
-                {selectedCategory === 'All' ? (
+                {isSearching ? (
+                  <motion.section 
+                    key="search"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="py-12 bg-surface min-h-screen"
+                  >
+                    <div className="max-w-7xl 2xl:max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
+                        <div className="flex items-center gap-4 mb-8">
+                            <button 
+                                onClick={() => handleSearchAndNavigate('')}
+                                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                            >
+                                <ArrowLeftIcon className="w-6 h-6 text-gray-600" />
+                            </button>
+                            <h1 className="text-3xl font-serif text-on-surface cyber-text">
+                                Búsqueda de Productos
+                            </h1>
+                        </div>
+
+                        <div className="flex justify-center mb-12">
+                            <form
+                                className="w-full md:w-2/3"
+                                onSubmit={(e) => e.preventDefault()}
+                            >
+                               <div className="relative w-full group">
+                                   <input 
+                                       autoFocus
+                                       type="text" 
+                                       placeholder="¿Qué estás buscando hoy?" 
+                                       value={searchTerm}
+                                       onChange={(e) => setSearchTerm(e.target.value)}
+                                       className="w-full bg-white border-2 border-primary/30 rounded-full pl-14 pr-6 py-4 text-lg focus:ring-4 focus:ring-primary/20 focus:border-primary shadow-lg transition-all duration-300"
+                                    />
+                                   <SearchIcon className="absolute left-5 top-1/2 -translate-y-1/2 w-6 h-6 text-primary" />
+                               </div>
+                            </form>
+                        </div>
+
+                        <div className="mb-8">
+                            <h3 className="font-semibold mb-6 text-gray-600 flex items-center gap-2 text-lg">
+                              <span className="w-1.5 h-8 bg-primary rounded-full"></span>
+                              {searchTerm.trim() ? `Resultados para "${searchTerm}"` : 'Explora nuestros productos'}
+                            </h3>
+
+                            <ProductGrid 
+                                products={filteredProducts} 
+                                onOpenDetails={handleOpenProductDetails}
+                                onQuickAdd={handleQuickAddToCart}
+                                editMode={editMode}
+                                userRole={userData?.role}
+                                onOpenEdit={handleOpenProductEdit}
+                                formatCurrency={formatCurrency}
+                            />
+                            
+                            {searchTerm.trim() && filteredProducts.length === 0 && (
+                                <div className="text-center py-20">
+                                    <SearchIcon className="w-16 h-16 text-gray-200 mx-auto mb-4" />
+                                    <p className="text-gray-500 text-xl">No encontramos nada que coincida con "{searchTerm}"</p>
+                                    <p className="text-gray-400 mt-2">Intenta con otras palabras o explora las categorías.</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                  </motion.section>
+                ) : selectedCategory === 'All' ? (
                   <motion.div 
                     key="all"
                     initial={{ opacity: 0, y: 20 }}
@@ -1178,38 +1190,7 @@ const App: React.FC = () => {
                     <ProductCarousel title="Recién llegados ✨🆕" products={newArrivals} />
                     <ProductCarousel title="En tendencia en redes 🔥📱" products={bestSellers} />
                     
-                    <section id="productos" className="py-12 bg-surface transition-colors duration-500">
-                        <div className="max-w-7xl 2xl:max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
-                            <h2 className="text-3xl font-serif text-center mb-8 text-on-surface cyber-text">
-                               Todo Nuestro Catálogo
-                            </h2>
-                             <div className="flex justify-center mb-8">
-                                <form
-                                    className="w-full md:w-1/2"
-                                    onSubmit={(e) => {
-                                        e.preventDefault();
-                                        handleSearchAndNavigate(inlineSearchTerm);
-                                    }}
-                                >
-                                   <div className="relative w-full group">
-                                       <input 
-                                           type="text" 
-                                           placeholder="Buscar productos por nombre..." 
-                                           value={inlineSearchTerm}
-                                           onChange={handleInlineSearchChange}
-                                           className="w-full bg-white border border-gray-300 rounded-full pl-12 pr-4 py-3 focus:ring-2 focus:ring-primary focus:border-primary shadow-sm transition-all duration-300 group-hover:shadow-md"
-                                        />
-                                       <SearchIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 transition-colors duration-300 group-focus-within:text-primary" />
-                                   </div>
-                                </form>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 md:gap-6">
-                                {filteredProducts.map(product => <ProductCard key={product.id} product={product} />)}
-                            </div>
-                            {filteredProducts.length === 0 && <p className="text-center col-span-full mt-8">No se encontraron productos que coincidan con tu búsqueda.</p>}
-                        </div>
-                    </section>
+                    <InstagramFeed />
                   </motion.div>
                 ) : (
                   <motion.section 
@@ -1239,41 +1220,21 @@ const App: React.FC = () => {
                             />
                         </motion.div>
 
-                        {/* Inline Search for Category */}
-                        <motion.div 
-                            initial={{ y: 20, opacity: 0 }}
-                            animate={{ y: 0, opacity: 1 }}
-                            transition={{ delay: 0.3, duration: 0.5 }}
-                            className="flex justify-center mb-12"
-                        >
-                            <form
-                                className="w-full md:w-1/2"
-                                onSubmit={(e) => {
-                                    e.preventDefault();
-                                    handleSearchAndNavigate(inlineSearchTerm);
-                                }}
-                            >
-                               <div className="relative w-full group">
-                                   <input 
-                                       type="text" 
-                                       placeholder={`Buscar en ${selectedCategory}...`} 
-                                       value={inlineSearchTerm}
-                                       onChange={handleInlineSearchChange}
-                                       className="w-full bg-white border border-gray-300 rounded-full pl-12 pr-4 py-3 focus:ring-2 focus:ring-primary focus:border-primary shadow-sm transition-all duration-300 group-hover:shadow-md hover:border-primary/50"
-                                    />
-                                   <SearchIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 transition-colors duration-300 group-focus-within:text-primary" />
-                               </div>
-                            </form>
-                        </motion.div>
-
                         {/* Product Grid */}
                         <motion.div 
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             transition={{ delay: 0.4, duration: 0.5 }}
-                            className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 md:gap-6"
                         >
-                            {filteredProducts.map(product => <ProductCard key={product.id} product={product} />)}
+                            <ProductGrid 
+                                products={filteredProducts} 
+                                onOpenDetails={handleOpenProductDetails}
+                                onQuickAdd={handleQuickAddToCart}
+                                editMode={editMode}
+                                userRole={userData?.role}
+                                onOpenEdit={handleOpenProductEdit}
+                                formatCurrency={formatCurrency}
+                            />
                         </motion.div>
                         
                         {filteredProducts.length === 0 && (
@@ -1318,11 +1279,6 @@ const App: React.FC = () => {
             {selectedProduct && <ProductDetailModal product={selectedProduct} onClose={closeModal} onAddToCart={handleAddToCart} formatCurrency={formatCurrency} showToast={showToast} allProducts={products} config={config} />}
             {isInvoiceModalOpen && <InvoiceModal onClose={() => navigate('/cart')} cart={cart} subtotal={cartSubtotal} onSubmitOrder={handleNewOrder} config={config} formatCurrency={formatCurrency} />}
             {isAddUserModalOpen && <AddUserModal onClose={() => setAddUserModalOpen(false)} onCreateUser={handleCreateUser} />}
-            {isSearchModalOpen && <SearchModal 
-                onClose={() => setSearchModalOpen(false)} 
-                onSearch={(term) => handleSearchAndNavigate(term, 'All')} 
-                onSelectCategory={(category) => handleSearchAndNavigate('', category)} 
-            />}
 
 
             <a
@@ -1340,74 +1296,223 @@ const App: React.FC = () => {
 
 // --- SUB-COMPONENTS ---
 
-const SearchModal: React.FC<{
-  onClose: () => void;
-  onSearch: (term: string) => void;
-  onSelectCategory: (category: Category | 'All' | 'On Sale') => void;
-}> = ({ onClose, onSearch, onSelectCategory }) => {
-  const [term, setTerm] = useState('');
-  const inputRef = useRef<HTMLInputElement>(null);
+const ProductCard: React.FC<{ 
+    product: Product; 
+    onOpenDetails: (p: Product) => void; 
+    onQuickAdd: (p: Product) => void; 
+    editMode: boolean; 
+    userRole?: string; 
+    onOpenEdit: (p: Product) => void; 
+    formatCurrency: (n: number) => string;
+}> = ({ product, onOpenDetails, onQuickAdd, editMode, userRole, onOpenEdit, formatCurrency }) => {
+    const hasDiscount = product.discountPercentage != null && product.discountPercentage > 0;
+    const discountedPrice = hasDiscount ? product.price * (1 - product.discountPercentage! / 100) : product.price;
 
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
-  
-  const suggestions = [
-    { emoji: '👗', text: 'Vestidos', category: 'Vestidos' },
-    { emoji: '👖', text: 'Pantalones', category: 'Pantalones' },
-    { emoji: '👚', text: 'Blusas', category: 'Blusas' },
-    { emoji: '✨', text: 'Accesorios', category: 'Accesorios' },
-    { emoji: '👜', text: 'Bolsos', category: 'Bolsos' },
-    { emoji: '🧥', text: 'Chaquetas', category: 'Chaquetas' },
-    { emoji: '🔥', text: 'Ofertas', category: 'On Sale' },
-  ];
-  
-  const handleSuggestionClick = (category: Category | 'All' | 'On Sale') => {
-    onSelectCategory(category);
-  };
-
-  const handleSearchSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSearch(term);
-  };
-  
-  return (
-    <div className="fixed inset-0 bg-black/60 z-[70] flex justify-center items-start pt-20 p-4" onClick={onClose}>
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-lg" onClick={e => e.stopPropagation()}>
-        <form onSubmit={handleSearchSubmit}>
-          <div className="relative p-4">
-            <input 
-              ref={inputRef}
-              type="text" 
-              value={term}
-              onChange={(e) => setTerm(e.target.value)}
-              placeholder="¿Qué estás buscando hoy?"
-              className="w-full bg-surface border-2 border-gray-300 rounded-full pl-12 pr-4 py-3 focus:ring-2 focus:ring-primary focus:border-primary"
-            />
-            <SearchIcon className="absolute left-8 top-1/2 -translate-y-1/2 w-6 h-6 text-gray-400" />
-            <button type="submit" className="hidden">Buscar</button>
-          </div>
-        </form>
-        <div className="p-4 pt-0">
-          <h3 className="font-semibold mb-3 text-gray-600">Sugerencias de Búsqueda</h3>
-          <div className="flex flex-wrap gap-3">
-            {suggestions.map(s => (
-              <button 
-                key={s.text} 
-                onClick={() => handleSuggestionClick(s.category as any)}
-                className="flex items-center space-x-2 bg-gray-100 hover:bg-pink-100 text-on-surface hover:text-primary px-4 py-2 rounded-full transition-colors"
-              >
-                <span>{s.emoji}</span>
-                <span className="font-medium">{s.text}</span>
-              </button>
-            ))}
-          </div>
+    return (
+        <div className="relative group bg-surface rounded-lg shadow-md overflow-hidden flex flex-col h-full cursor-pointer cyber-border" onClick={() => onOpenDetails(product)}>
+            <div className="relative aspect-[4/5] w-full overflow-hidden bg-surface/50">
+                <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" referrerPolicy="no-referrer" />
+                {!product.available && (
+                    <div className="absolute top-2 left-2 bg-on-surface text-background text-xs font-bold px-2 py-1 rounded">AGOTADO</div>
+                )}
+                {hasDiscount && (
+                    <div className="absolute top-2 right-2 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded">{product.discountPercentage}% OFF</div>
+                )}
+                <div className="absolute bottom-2 right-2">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onQuickAdd(product); }}
+                      className="bg-surface/80 backdrop-blur-sm text-primary rounded-full p-2 shadow-md hover:bg-surface transition-all scale-0 group-hover:scale-100 disabled:opacity-50 cyber-gradient-bg"
+                      aria-label="Agregar al carrito"
+                      disabled={!product.available}
+                    >
+                      <PlusIcon className="w-5 h-5 text-white" />
+                    </button>
+                </div>
+                 {editMode && (userRole === 'admin' || userRole === 'vendedor') && (
+                  <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center space-y-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {product.provider && (
+                        <div className="text-center px-2">
+                            <span className="text-xs font-bold text-gray-300 uppercase tracking-wider">Proveedor</span>
+                            <p className="text-white font-semibold text-sm truncate">{product.provider}</p>
+                        </div>
+                    )}
+                    <button onClick={(e) => {e.stopPropagation(); onOpenEdit(product);}} className="bg-surface text-on-surface px-3 py-1 rounded text-sm font-semibold flex items-center space-x-1">
+                      <PencilIcon className="w-4 h-4"/>
+                      <span>Editar</span>
+                    </button>
+                  </div>
+                )}
+            </div>
+            <div className="p-4 flex flex-col flex-grow">
+                <h3 className="font-semibold text-sm truncate cyber-text">{product.name}</h3>
+                <div className="flex items-baseline gap-2 mt-1">
+                    {hasDiscount && (
+                       <span className="text-gray-500 line-through text-sm">{formatCurrency(product.price)}</span>
+                    )}
+                    <span className="text-primary font-bold text-base cyber-text">{formatCurrency(discountedPrice)}</span>
+                </div>
+            </div>
         </div>
-      </div>
-    </div>
-  );
+    );
 };
 
+const InstagramFeed: React.FC = () => {
+    const [posts, setPosts] = useState<any[]>([]);
+    const [loading, setLoading] = useState(false);
+    const { config } = (window as any).storeContext || { config: {} }; // We'll need to pass config or get it from context
+
+    // For simplicity in this component, we'll fetch from a global or passed config
+    // In a real app, we'd use a context or prop
+    
+    useEffect(() => {
+        const fetchInstagramMedia = async () => {
+            if (!config?.instagramAccessToken) {
+                // Fallback to mock data if no token
+                setPosts([
+                    { id: 1, type: 'video', url: 'https://assets.mixkit.co/videos/preview/mixkit-fashion-model-posing-in-a-studio-34493-large.mp4', thumbnail: 'https://picsum.photos/seed/insta1/400/600' },
+                    { id: 2, type: 'image', url: 'https://picsum.photos/seed/insta2/400/600' },
+                    { id: 3, type: 'video', url: 'https://assets.mixkit.co/videos/preview/mixkit-girl-in-neon-lighting-34504-large.mp4', thumbnail: 'https://picsum.photos/seed/insta3/400/600' },
+                    { id: 4, type: 'image', url: 'https://picsum.photos/seed/insta4/400/600' },
+                    { id: 5, type: 'image', url: 'https://picsum.photos/seed/insta5/400/600' },
+                    { id: 6, type: 'video', url: 'https://assets.mixkit.co/videos/preview/mixkit-young-woman-posing-in-a-studio-34491-large.mp4', thumbnail: 'https://picsum.photos/seed/insta6/400/600' },
+                ]);
+                return;
+            }
+
+            setLoading(true);
+            try {
+                const res = await fetch(`/api/instagram/media?token=${config.instagramAccessToken}`);
+                const data = await res.json();
+                if (data.data) {
+                    const mapped = data.data.map((m: any) => ({
+                        id: m.id,
+                        type: m.media_type === 'VIDEO' ? 'video' : 'image',
+                        url: m.media_url,
+                        thumbnail: m.thumbnail_url || m.media_url,
+                        permalink: m.permalink
+                    })).slice(0, 6);
+                    setPosts(mapped);
+                }
+            } catch (err) {
+                console.error("Error fetching Instagram media:", err);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchInstagramMedia();
+    }, [config?.instagramAccessToken]);
+
+    if (loading) {
+        return (
+            <div className="py-16 flex justify-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+            </div>
+        );
+    }
+
+    return (
+        <section className="py-16 bg-surface">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div className="text-center mb-12">
+                    <h2 className="text-3xl md:text-4xl font-serif font-bold mb-4 text-on-surface cyber-text">
+                        Síguenos en Instagram
+                    </h2>
+                    <p className="text-gray-500 max-w-2xl mx-auto">
+                        Únete a nuestra comunidad y descubre las últimas tendencias, outfits y momentos exclusivos de Bombón Tienda.
+                    </p>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                    {posts.map((post) => (
+                        <a 
+                            key={post.id} 
+                            href={post.permalink || '#'} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="relative aspect-[3/4] rounded-xl overflow-hidden group shadow-lg"
+                        >
+                            {post.type === 'video' ? (
+                                <video 
+                                    src={post.url} 
+                                    className="w-full h-full object-cover"
+                                    muted
+                                    loop
+                                    playsInline
+                                    onMouseOver={(e) => (e.target as HTMLVideoElement).play()}
+                                    onMouseOut={(e) => {
+                                        const video = e.target as HTMLVideoElement;
+                                        video.pause();
+                                        video.currentTime = 0;
+                                    }}
+                                />
+                            ) : (
+                                <img src={post.url} alt="Instagram post" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" referrerPolicy="no-referrer" />
+                            )}
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
+                                <InstagramIcon className="w-8 h-8 text-white" />
+                            </div>
+                            {post.type === 'video' && (
+                                <div className="absolute top-2 right-2 bg-black/50 p-1 rounded-md">
+                                    <PlayIcon className="w-4 h-4 text-white" />
+                                </div>
+                            )}
+                        </a>
+                    ))}
+                </div>
+                
+                <div className="text-center mt-12">
+                    <a 
+                        href={config?.social?.instagram || "https://instagram.com"} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 px-8 py-3 bg-primary text-white rounded-full font-bold hover:bg-primary-dark transition-all shadow-xl hover:scale-105"
+                    >
+                        <InstagramIcon className="w-5 h-5" />
+                        Ver perfil completo
+                    </a>
+                </div>
+            </div>
+        </section>
+    );
+};
+
+const ProductGrid: React.FC<{ 
+    products: Product[];
+    onOpenDetails: (p: Product) => void;
+    onQuickAdd: (p: Product) => void;
+    editMode: boolean;
+    userRole?: string;
+    onOpenEdit: (p: Product) => void;
+    formatCurrency: (n: number) => string;
+}> = ({ products, onOpenDetails, onQuickAdd, editMode, userRole, onOpenEdit, formatCurrency }) => {
+    if (products.length === 0) {
+        return (
+            <div className="col-span-full py-20 text-center">
+                <SearchIcon className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                <h3 className="text-xl font-semibold text-gray-600">No se encontraron productos</h3>
+                <p className="text-gray-400 mt-2">Intenta con otros términos de búsqueda o selecciona otra categoría.</p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="w-full grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 md:gap-6">
+            {products.map(product => (
+                <ProductCard 
+                    key={product.id} 
+                    product={product} 
+                    onOpenDetails={onOpenDetails}
+                    onQuickAdd={onQuickAdd}
+                    editMode={editMode}
+                    userRole={userRole}
+                    onOpenEdit={onOpenEdit}
+                    formatCurrency={formatCurrency}
+                />
+            ))}
+        </div>
+    );
+};
 
 const AddUserModal: React.FC<{
     onClose: () => void;
@@ -2996,6 +3101,54 @@ const AdminGeneralTab: React.FC<{config: StoreConfig, onSave: (c: StoreConfig) =
                 <AdminInput label="Instagram (URL completa)" value={localConfig.social.instagram} onChange={e => setLocalConfig({...localConfig, social: {...localConfig.social, instagram: e.target.value}})} />
                 <AdminInput label="TikTok (URL completa)" value={localConfig.social.tiktok} onChange={e => setLocalConfig({...localConfig, social: {...localConfig.social, tiktok: e.target.value}})} />
                 <AdminInput label="Número de WhatsApp (con cód. país)" value={localConfig.social.whatsapp} onChange={e => setLocalConfig({...localConfig, social: {...localConfig.social, whatsapp: e.target.value}})} />
+                
+                <div className="pt-4 border-t border-gray-100">
+                    <h3 className="font-bold text-gray-700 mb-2">Sincronización de Instagram</h3>
+                    <p className="text-xs text-gray-500 mb-4">Conecta tu cuenta para mostrar fotos y vídeos reales en la página principal.</p>
+                    
+                    {localConfig.instagramAccessToken ? (
+                        <div className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-lg">
+                            <div className="flex items-center gap-2 text-green-700">
+                                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                                <span className="text-sm font-medium">Instagram Conectado</span>
+                            </div>
+                            <button 
+                                onClick={() => setLocalConfig({...localConfig, instagramAccessToken: ''})}
+                                className="text-xs text-red-600 hover:underline font-medium"
+                            >
+                                Desconectar
+                            </button>
+                        </div>
+                    ) : (
+                        <button 
+                            onClick={async () => {
+                                try {
+                                    const res = await fetch('/api/auth/instagram/url');
+                                    const { url } = await res.json();
+                                    const width = 600, height = 700;
+                                    const left = (window.innerWidth - width) / 2;
+                                    const top = (window.innerHeight - height) / 2;
+                                    window.open(url, 'instagram_auth', `width=${width},height=${height},top=${top},left=${left}`);
+                                    
+                                    const handleMessage = (event: MessageEvent) => {
+                                        if (event.data?.type === 'INSTAGRAM_AUTH_SUCCESS') {
+                                            setLocalConfig(prev => ({...prev, instagramAccessToken: event.data.token}));
+                                            window.removeEventListener('message', handleMessage);
+                                        }
+                                    };
+                                    window.addEventListener('message', handleMessage);
+                                } catch (err) {
+                                    console.error("Error getting Instagram auth URL:", err);
+                                }
+                            }}
+                            className="flex items-center justify-center gap-2 w-full py-3 px-4 bg-gradient-to-tr from-[#f09433] via-[#dc2743] to-[#bc1888] text-white rounded-lg font-bold hover:opacity-90 transition-all shadow-md"
+                        >
+                            <InstagramIcon className="w-5 h-5" />
+                            Conectar Instagram
+                        </button>
+                    )}
+                </div>
+
                 <button 
                     onClick={handleSave} 
                     disabled={isSaving}

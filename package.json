@@ -1,25 +1,29 @@
 {
   "name": "bombon-tienda",
   "private": true,
-  "version": "0.0.1",
+  "version": "0.0.9",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "tsx server.ts",
     "build": "vite build",
-    "preview": "vite preview",
+    "start": "node server.ts",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
     "@google/genai": "^1.44.0",
+    "axios": "^1.13.6",
     "clsx": "^2.1.1",
+    "express": "^5.2.1",
     "firebase": "^10.12.2",
     "lucide-react": "^0.577.0",
     "motion": "^12.34.5",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "tailwind-merge": "^3.5.0"
+    "tailwind-merge": "^3.5.0",
+    "tsx": "^4.21.0"
   },
   "devDependencies": {
+    "@types/express": "^5.0.6",
     "@types/react": "^18.2.66",
     "@types/react-dom": "^18.2.22",
     "@vitejs/plugin-react": "^4.2.1",

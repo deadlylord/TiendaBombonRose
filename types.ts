@@ -59,6 +59,7 @@ export interface StoreConfig {
   contact: ContactInfo;
   social: SocialLinks;
   paymentMethodsImageUrl?: string;
+  instagramAccessToken?: string;
 }
 
 export interface CartItem {
