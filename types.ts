@@ -28,7 +28,10 @@ export interface Product {
   rawName?: string;
   stock?: number;
   madeInColombia?: boolean;
+  isFeatured?: boolean;
+  isNewArrival?: boolean;
   createdAt?: number;
+  updatedAt?: number;
 }
 
 export type Category = string;

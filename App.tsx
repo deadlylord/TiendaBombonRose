@@ -11,9 +11,9 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, User as FirebaseUser } from 'firebase/auth';
 
 import {
-  CartIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, InstagramIcon, MenuIcon,
+  CartIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, MenuIcon,
   SearchIcon, TikTokIcon, WhatsAppIcon, TrashIcon, PlusIcon, MinusIcon,
-  PencilIcon, UploadIcon, ShareIcon, HeartIcon, ShoppingBagIcon, ArrowLeftIcon, PlayIcon
+  PencilIcon, UploadIcon, ShareIcon, HeartIcon, ShoppingBagIcon, ArrowLeftIcon
 } from './components/Icons';
 
 // --- MOCK DATA (Initial values for Firestore) ---
@@ -216,7 +216,7 @@ const useFirestoreDocSync = <T extends object>(collectionName: string, docId: st
         );
 
         return () => unsubscribe();
-    }, [docRef, JSON.stringify(initialValue)]);
+    }, [docRef]);
 
     const setValue = useCallback(async (value: T) => {
         try {
@@ -332,7 +332,10 @@ const App: React.FC = () => {
                         hasColors: false, colors: {}
                     },
                     madeInColombia: extension?.madeInColombia ?? true, // Default to true as requested
-                    createdAt: getCreatedAt(item)
+                    isFeatured: extension?.isFeatured ?? false,
+                    isNewArrival: extension?.isNewArrival ?? false,
+                    createdAt: getCreatedAt(item),
+                    updatedAt: extension?.updatedAt || 0
                 } as Product;
             });
     }, [posInventory, productExtensions, posCategories]);
@@ -530,11 +533,24 @@ const App: React.FC = () => {
 
     const newArrivals = useMemo(() => {
         return [...(products || [])]
-            .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+            .sort((a, b) => {
+                if (a.isNewArrival && !b.isNewArrival) return -1;
+                if (!a.isNewArrival && b.isNewArrival) return 1;
+                const dateA = a.updatedAt || a.createdAt || 0;
+                const dateB = b.updatedAt || b.createdAt || 0;
+                return dateB - dateA;
+            })
             .slice(0, 6);
     }, [products]);
     const bestSellers = useMemo(() => {
-        return [...(products || [])].sort(() => Math.random() - 0.5).slice(0, 8);
+        return [...(products || [])]
+            .filter(p => p.available)
+            .sort((a, b) => {
+                if (a.isFeatured && !b.isFeatured) return -1;
+                if (!a.isFeatured && b.isFeatured) return 1;
+                return Math.random() - 0.5;
+            })
+            .slice(0, 8);
     }, [products]);
 
     const handleBulkGenerateDescriptions = async (category: string) => {
@@ -783,7 +799,10 @@ const App: React.FC = () => {
           imageUrlOverride: newProduct.imageUrl,
           priceOverride: newProduct.price,
           discountPercentage: newProduct.discountPercentage,
-          variants: newProduct.variants
+          variants: newProduct.variants,
+          isFeatured: newProduct.isFeatured,
+          isNewArrival: newProduct.isNewArrival,
+          updatedAt: Date.now()
       };
       setDoc(doc(db, 'product_extensions', newProduct.id), extension, { merge: true });
       showToast("Producto configurado localmente.");
@@ -797,7 +816,10 @@ const App: React.FC = () => {
           priceOverride: updatedProduct.price,
           discountPercentage: updatedProduct.discountPercentage,
           variants: updatedProduct.variants,
-          madeInColombia: updatedProduct.madeInColombia
+          madeInColombia: updatedProduct.madeInColombia,
+          isFeatured: updatedProduct.isFeatured,
+          isNewArrival: updatedProduct.isNewArrival,
+          updatedAt: Date.now()
       };
       setDoc(doc(db, 'product_extensions', updatedProduct.id), extension, { merge: true });
       showToast("Producto actualizado localmente.");
@@ -1078,7 +1100,6 @@ const App: React.FC = () => {
     }
 
     // --- MAIN RENDER ---
-    (window as any).storeContext = { config };
     
     return (
         <div className="bg-background min-h-screen">
@@ -1188,9 +1209,7 @@ const App: React.FC = () => {
                     />
                     
                     <ProductCarousel title="Recién llegados ✨🆕" products={newArrivals} />
-                    <ProductCarousel title="En tendencia en redes 🔥📱" products={bestSellers} />
-                    
-                    <InstagramFeed />
+                    <ProductCarousel title="En tendencia 🔥📱" products={bestSellers} />
                   </motion.div>
                 ) : (
                   <motion.section 
@@ -1356,126 +1375,6 @@ const ProductCard: React.FC<{
     );
 };
 
-const InstagramFeed: React.FC = () => {
-    const [posts, setPosts] = useState<any[]>([]);
-    const [loading, setLoading] = useState(false);
-    const { config } = (window as any).storeContext || { config: {} }; // We'll need to pass config or get it from context
-
-    // For simplicity in this component, we'll fetch from a global or passed config
-    // In a real app, we'd use a context or prop
-    
-    useEffect(() => {
-        const fetchInstagramMedia = async () => {
-            if (!config?.instagramAccessToken) {
-                // Fallback to mock data if no token
-                setPosts([
-                    { id: 1, type: 'video', url: 'https://assets.mixkit.co/videos/preview/mixkit-fashion-model-posing-in-a-studio-34493-large.mp4', thumbnail: 'https://picsum.photos/seed/insta1/400/600' },
-                    { id: 2, type: 'image', url: 'https://picsum.photos/seed/insta2/400/600' },
-                    { id: 3, type: 'video', url: 'https://assets.mixkit.co/videos/preview/mixkit-girl-in-neon-lighting-34504-large.mp4', thumbnail: 'https://picsum.photos/seed/insta3/400/600' },
-                    { id: 4, type: 'image', url: 'https://picsum.photos/seed/insta4/400/600' },
-                    { id: 5, type: 'image', url: 'https://picsum.photos/seed/insta5/400/600' },
-                    { id: 6, type: 'video', url: 'https://assets.mixkit.co/videos/preview/mixkit-young-woman-posing-in-a-studio-34491-large.mp4', thumbnail: 'https://picsum.photos/seed/insta6/400/600' },
-                ]);
-                return;
-            }
-
-            setLoading(true);
-            try {
-                const res = await fetch(`/api/instagram/media?token=${config.instagramAccessToken}`);
-                const data = await res.json();
-                if (data.data) {
-                    const mapped = data.data.map((m: any) => ({
-                        id: m.id,
-                        type: m.media_type === 'VIDEO' ? 'video' : 'image',
-                        url: m.media_url,
-                        thumbnail: m.thumbnail_url || m.media_url,
-                        permalink: m.permalink
-                    })).slice(0, 6);
-                    setPosts(mapped);
-                }
-            } catch (err) {
-                console.error("Error fetching Instagram media:", err);
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        fetchInstagramMedia();
-    }, [config?.instagramAccessToken]);
-
-    if (loading) {
-        return (
-            <div className="py-16 flex justify-center">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-            </div>
-        );
-    }
-
-    return (
-        <section className="py-16 bg-surface">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                <div className="text-center mb-12">
-                    <h2 className="text-3xl md:text-4xl font-serif font-bold mb-4 text-on-surface cyber-text">
-                        Síguenos en Instagram
-                    </h2>
-                    <p className="text-gray-500 max-w-2xl mx-auto">
-                        Únete a nuestra comunidad y descubre las últimas tendencias, outfits y momentos exclusivos de Bombón Tienda.
-                    </p>
-                </div>
-
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-                    {posts.map((post) => (
-                        <a 
-                            key={post.id} 
-                            href={post.permalink || '#'} 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            className="relative aspect-[3/4] rounded-xl overflow-hidden group shadow-lg"
-                        >
-                            {post.type === 'video' ? (
-                                <video 
-                                    src={post.url} 
-                                    className="w-full h-full object-cover"
-                                    muted
-                                    loop
-                                    playsInline
-                                    onMouseOver={(e) => (e.target as HTMLVideoElement).play()}
-                                    onMouseOut={(e) => {
-                                        const video = e.target as HTMLVideoElement;
-                                        video.pause();
-                                        video.currentTime = 0;
-                                    }}
-                                />
-                            ) : (
-                                <img src={post.url} alt="Instagram post" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" referrerPolicy="no-referrer" />
-                            )}
-                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
-                                <InstagramIcon className="w-8 h-8 text-white" />
-                            </div>
-                            {post.type === 'video' && (
-                                <div className="absolute top-2 right-2 bg-black/50 p-1 rounded-md">
-                                    <PlayIcon className="w-4 h-4 text-white" />
-                                </div>
-                            )}
-                        </a>
-                    ))}
-                </div>
-                
-                <div className="text-center mt-12">
-                    <a 
-                        href={config?.social?.instagram || "https://instagram.com"} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-2 px-8 py-3 bg-primary text-white rounded-full font-bold hover:bg-primary-dark transition-all shadow-xl hover:scale-105"
-                    >
-                        <InstagramIcon className="w-5 h-5" />
-                        Ver perfil completo
-                    </a>
-                </div>
-            </div>
-        </section>
-    );
-};
 
 const ProductGrid: React.FC<{ 
     products: Product[];
@@ -2512,7 +2411,6 @@ const Footer: React.FC<{ contact: StoreConfig['contact'], social: StoreConfig['s
             <div>
                  <h3 className="font-semibold">Síguenos</h3>
                  <div className="flex items-center space-x-4 mt-2">
-                    <a href={social.instagram} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-white"><InstagramIcon className="w-6 h-6" /></a>
                     <a href={social.tiktok} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-white"><TikTokIcon className="w-6 h-6" /></a>
                     <a href={`https://wa.me/${social.whatsapp}`} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-white"><WhatsAppIcon className="w-6 h-6" /></a>
                 </div>
@@ -2536,6 +2434,23 @@ const AdminInput = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<
         <input ref={ref} {...props} className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary sm:text-sm disabled:bg-gray-100" />
     </div>
 ));
+
+const AdminSelect: React.FC<{
+    label: string;
+    value: string;
+    onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void;
+    options: { label: string; value: string }[];
+    className?: string;
+}> = ({ label, value, onChange, options, className = "" }) => (
+    <div className={className}>
+        <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+        <select value={value} onChange={onChange} className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary sm:text-sm disabled:bg-gray-100">
+            {options.map((opt, idx) => (
+                <option key={idx} value={opt.value}>{opt.label}</option>
+            ))}
+        </select>
+    </div>
+);
 
 const ImageUpload: React.FC<{
     currentImage: string;
@@ -2715,6 +2630,7 @@ const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                 return isAdmin ? <AdminBannersTab 
                             banners={props.store.banners}
                             menBanners={props.store.menBanners}
+                            categories={props.store.categories}
                             onSaveBanners={onSaveBanners}
                             onSaveMenBanners={onSaveMenBanners}
                         /> : null;
@@ -2975,9 +2891,10 @@ const AdminCategoriesTab: React.FC<{categories: Category[], onSave: (cats: Categ
 const AdminBannersTab: React.FC<{
     banners: Banner[], 
     menBanners: Banner[],
+    categories: Category[],
     onSaveBanners: (b: Banner[]) => void,
     onSaveMenBanners: (b: Banner[]) => void
-}> = ({ banners, menBanners, onSaveBanners, onSaveMenBanners }) => {
+}> = ({ banners, menBanners, categories, onSaveBanners, onSaveMenBanners }) => {
     const [localBanners, setLocalBanners] = useState<Banner[]>(banners || []);
     const [localMenBanners, setLocalMenBanners] = useState<Banner[]>(menBanners || []);
     
@@ -3012,6 +2929,12 @@ const AdminBannersTab: React.FC<{
         }
     };
 
+    const linkOptions = [
+        { label: 'Elegir destino...', value: '' },
+        { label: 'Todos los productos', value: '#productos' },
+        ...categories.map(cat => ({ label: `Categoría: ${cat}`, value: `category:${cat}` }))
+    ];
+
     return (
          <div className="p-6 space-y-12">
             {/* Standard Banners */}
@@ -3030,7 +2953,16 @@ const AdminBannersTab: React.FC<{
                             <div className="md:col-span-2 space-y-4">
                                 <AdminInput label="Título" value={banner.title} onChange={e => updateBanner(banner.id, 'title', e.target.value, false)} />
                                 <AdminInput label="Subtítulo" value={banner.subtitle} onChange={e => updateBanner(banner.id, 'subtitle', e.target.value, false)} />
-                                <AdminInput label="Enlace (Link)" value={banner.link} onChange={e => updateBanner(banner.id, 'link', e.target.value, false)} placeholder="Ej: #productos o category:Pantalones"/>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <AdminInput label="Enlace Manual" value={banner.link} onChange={e => updateBanner(banner.id, 'link', e.target.value, false)} placeholder="Ej: #productos"/>
+                                    <AdminSelect 
+                                        label="Conectar a Categoría" 
+                                        value={banner.link.startsWith('category:') ? banner.link : ''} 
+                                        onChange={e => e.target.value && updateBanner(banner.id, 'link', e.target.value, false)}
+                                        options={linkOptions}
+                                    />
+                                </div>
+                                <p className="text-xs text-gray-400">Actual: {banner.link}</p>
                             </div>
                             <button onClick={() => removeBanner(banner.id, false)} className="absolute top-2 right-2 text-red-500 hover:text-red-700"><TrashIcon className="w-5 h-5"/></button>
                         </div>
@@ -3054,7 +2986,16 @@ const AdminBannersTab: React.FC<{
                             <div className="md:col-span-2 space-y-4">
                                 <AdminInput label="Título" value={banner.title} onChange={e => updateBanner(banner.id, 'title', e.target.value, true)} />
                                 <AdminInput label="Subtítulo" value={banner.subtitle} onChange={e => updateBanner(banner.id, 'subtitle', e.target.value, true)} />
-                                <AdminInput label="Enlace (Link)" value={banner.link} onChange={e => updateBanner(banner.id, 'link', e.target.value, true)} placeholder="Ej: #productos o category:Pantalones"/>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <AdminInput label="Enlace Manual" value={banner.link} onChange={e => updateBanner(banner.id, 'link', e.target.value, true)} placeholder="Ej: #productos"/>
+                                    <AdminSelect 
+                                        label="Conectar a Categoría" 
+                                        value={banner.link.startsWith('category:') ? banner.link : ''} 
+                                        onChange={e => e.target.value && updateBanner(banner.id, 'link', e.target.value, true)}
+                                        options={linkOptions}
+                                    />
+                                </div>
+                                <p className="text-xs text-gray-600">Actual: {banner.link}</p>
                             </div>
                             <button onClick={() => removeBanner(banner.id, true)} className="absolute top-2 right-2 text-red-500 hover:text-red-700"><TrashIcon className="w-5 h-5"/></button>
                         </div>
@@ -3098,57 +3039,9 @@ const AdminGeneralTab: React.FC<{config: StoreConfig, onSave: (c: StoreConfig) =
                 <AdminInput label="Nombre de la Tienda" value={localConfig.contact.name} onChange={e => setLocalConfig({...localConfig, contact: {...localConfig.contact, name: e.target.value}})} />
                 <AdminInput label="Teléfono de Contacto" value={localConfig.contact.phone} onChange={e => setLocalConfig({...localConfig, contact: {...localConfig.contact, phone: e.target.value}})} />
                 <AdminInput label="Horario" value={localConfig.contact.schedule} onChange={e => setLocalConfig({...localConfig, contact: {...localConfig.contact, schedule: e.target.value}})} />
-                <AdminInput label="Instagram (URL completa)" value={localConfig.social.instagram} onChange={e => setLocalConfig({...localConfig, social: {...localConfig.social, instagram: e.target.value}})} />
                 <AdminInput label="TikTok (URL completa)" value={localConfig.social.tiktok} onChange={e => setLocalConfig({...localConfig, social: {...localConfig.social, tiktok: e.target.value}})} />
-                <AdminInput label="Número de WhatsApp (con cód. país)" value={localConfig.social.whatsapp} onChange={e => setLocalConfig({...localConfig, social: {...localConfig.social, whatsapp: e.target.value}})} />
+                <AdminInput label="WhatsApp (con cód. país)" value={localConfig.social.whatsapp} onChange={e => setLocalConfig({...localConfig, social: {...localConfig.social, whatsapp: e.target.value}})} />
                 
-                <div className="pt-4 border-t border-gray-100">
-                    <h3 className="font-bold text-gray-700 mb-2">Sincronización de Instagram</h3>
-                    <p className="text-xs text-gray-500 mb-4">Conecta tu cuenta para mostrar fotos y vídeos reales en la página principal.</p>
-                    
-                    {localConfig.instagramAccessToken ? (
-                        <div className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-lg">
-                            <div className="flex items-center gap-2 text-green-700">
-                                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                                <span className="text-sm font-medium">Instagram Conectado</span>
-                            </div>
-                            <button 
-                                onClick={() => setLocalConfig({...localConfig, instagramAccessToken: ''})}
-                                className="text-xs text-red-600 hover:underline font-medium"
-                            >
-                                Desconectar
-                            </button>
-                        </div>
-                    ) : (
-                        <button 
-                            onClick={async () => {
-                                try {
-                                    const res = await fetch('/api/auth/instagram/url');
-                                    const { url } = await res.json();
-                                    const width = 600, height = 700;
-                                    const left = (window.innerWidth - width) / 2;
-                                    const top = (window.innerHeight - height) / 2;
-                                    window.open(url, 'instagram_auth', `width=${width},height=${height},top=${top},left=${left}`);
-                                    
-                                    const handleMessage = (event: MessageEvent) => {
-                                        if (event.data?.type === 'INSTAGRAM_AUTH_SUCCESS') {
-                                            setLocalConfig(prev => ({...prev, instagramAccessToken: event.data.token}));
-                                            window.removeEventListener('message', handleMessage);
-                                        }
-                                    };
-                                    window.addEventListener('message', handleMessage);
-                                } catch (err) {
-                                    console.error("Error getting Instagram auth URL:", err);
-                                }
-                            }}
-                            className="flex items-center justify-center gap-2 w-full py-3 px-4 bg-gradient-to-tr from-[#f09433] via-[#dc2743] to-[#bc1888] text-white rounded-lg font-bold hover:opacity-90 transition-all shadow-md"
-                        >
-                            <InstagramIcon className="w-5 h-5" />
-                            Conectar Instagram
-                        </button>
-                    )}
-                </div>
-
                 <button 
                     onClick={handleSave} 
                     disabled={isSaving}
@@ -3514,9 +3407,19 @@ const ProductEditor: React.FC<{
                         </div>
                         <textarea value={edited.description} onChange={e => handleChange('description', e.target.value)} rows={4} className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"/>
                     </div>
-                    <div className="flex items-center space-x-2 mb-4">
-                        <input type="checkbox" id="madeInColombia" checked={edited.madeInColombia ?? true} onChange={e => handleChange('madeInColombia', e.target.checked)} className="h-4 w-4 text-primary rounded border-gray-300 focus:ring-primary" />
-                        <label htmlFor="madeInColombia" className="text-sm font-medium text-gray-700">Hecho en Colombia</label>
+                    <div className="flex flex-wrap gap-4 mb-4">
+                        <div className="flex items-center space-x-2">
+                            <input type="checkbox" id="madeInColombia" checked={edited.madeInColombia ?? true} onChange={e => handleChange('madeInColombia', e.target.checked)} className="h-4 w-4 text-primary rounded border-gray-300 focus:ring-primary" />
+                            <label htmlFor="madeInColombia" className="text-sm font-medium text-gray-700">Hecho en Colombia</label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                            <input type="checkbox" id="isFeatured" checked={edited.isFeatured ?? false} onChange={e => handleChange('isFeatured', e.target.checked)} className="h-4 w-4 text-primary rounded border-gray-300 focus:ring-primary" />
+                            <label htmlFor="isFeatured" className="text-sm font-medium text-gray-700">⭐ Destacado (Tendencia)</label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                            <input type="checkbox" id="isNewArrival" checked={edited.isNewArrival ?? false} onChange={e => handleChange('isNewArrival', e.target.checked)} className="h-4 w-4 text-primary rounded border-gray-300 focus:ring-primary" />
+                            <label htmlFor="isNewArrival" className="text-sm font-medium text-gray-700">🆕 Recién Llegado</label>
+                        </div>
                     </div>
                     <div className="grid grid-cols-3 gap-4">
                         <AdminInput label="Precio (COP)" type="number" value={edited.price} onChange={e => handleChange('price', parseFloat(e.target.value) || 0)} />
