@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from "motion/react";
-import { Product, Category, Banner, StoreConfig, CartItem, Order, ToastMessage, ProductVariantDetail, ProductColorVariantDetail, ProductVariants, User } from './types';
+import { Product, Category, Banner, StoreConfig, CartItem, Order, ToastMessage, ProductVariantDetail, ProductColorVariantDetail, ProductVariants, User, StoreBranch } from './types';
 import { GoogleGenAI } from "@google/genai";
 import { db, storage, auth } from './services/firebase';
 import { posDb } from './services/posFirebase';
@@ -11,7 +11,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, User as FirebaseUser } from 'firebase/auth';
 
 import {
-  CartIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, MenuIcon,
+  CartIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, InstagramIcon, MenuIcon,
   SearchIcon, TikTokIcon, WhatsAppIcon, TrashIcon, PlusIcon, MinusIcon,
   PencilIcon, UploadIcon, ShareIcon, HeartIcon, ShoppingBagIcon, ArrowLeftIcon
 } from './components/Icons';
@@ -270,6 +270,7 @@ const App: React.FC = () => {
     const [productExtensions, areExtensionsLoading] = useFirestoreCollectionSync<any>('product_extensions', db);
     const [{ list: localCategories }, setCategoriesDoc, areLocalCategoriesLoading] = useFirestoreDocSync<{list: Category[]}>('store', 'categories', { list: initialCategories });
     const [orders, areOrdersLoading] = useFirestoreCollectionSync<Order>('orders');
+    const [branches, _areBranchesLoading] = useFirestoreCollectionSync<StoreBranch>('branches');
     const [users, areUsersLoading] = useFirestoreCollectionSync<User>('users');
     const [cart, setCart] = useBrowserStorage<CartItem[]>('storeCart', []);
 
@@ -1078,7 +1079,7 @@ const App: React.FC = () => {
                 onClose={closeModal}
                 editMode={editMode}
                 setEditMode={setEditMode}
-                store={{ config, banners, menBanners, products, categories, orders, users }}
+                store={{ config, banners, menBanners, products, categories, orders, users, branches }}
                 onUpdateConfig={handleUpdateConfig}
                 onSaveBanners={handleSaveBanners}
                 onSaveMenBanners={handleSaveMenBanners}
@@ -1095,6 +1096,7 @@ const App: React.FC = () => {
                 onAddUser={() => setAddUserModalOpen(true)}
                 onUpdateUserRole={handleUpdateUserRole}
                 onDeleteUser={handleDeleteUser}
+                branches={branches}
             />
         );
     }
@@ -1278,6 +1280,7 @@ const App: React.FC = () => {
               </AnimatePresence>
             </main>
             
+            <BranchesSection branches={branches} />
             <Footer contact={config.contact} social={config.social} onAdminClick={handleOpenAdmin} />
 
             {isCartOpen && <CartPanel 
@@ -2411,6 +2414,7 @@ const Footer: React.FC<{ contact: StoreConfig['contact'], social: StoreConfig['s
             <div>
                  <h3 className="font-semibold">Síguenos</h3>
                  <div className="flex items-center space-x-4 mt-2">
+                    <a href={social.instagram} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-white"><InstagramIcon className="w-6 h-6" /></a>
                     <a href={social.tiktok} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-white"><TikTokIcon className="w-6 h-6" /></a>
                     <a href={`https://wa.me/${social.whatsapp}`} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-white"><WhatsAppIcon className="w-6 h-6" /></a>
                 </div>
@@ -2509,6 +2513,7 @@ interface AdminPanelProps {
         categories: Category[];
         orders: Order[];
         users: User[];
+        branches: StoreBranch[];
     };
     onUpdateConfig: (config: StoreConfig) => void;
     onSaveBanners: (banners: Banner[]) => void;
@@ -2526,6 +2531,7 @@ interface AdminPanelProps {
     onAddUser: () => void;
     onUpdateUserRole: (userDocId: string, newRole: User['role']) => void;
     onDeleteUser: (userDocId: string) => void;
+    branches: StoreBranch[];
 }
 
 const AdminPanel: React.FC<AdminPanelProps> = (props) => {
@@ -2534,14 +2540,15 @@ const AdminPanel: React.FC<AdminPanelProps> = (props) => {
         onUpdateConfig, onSaveBanners, onSaveMenBanners, onSaveCategories,
         onAddProduct, onUpdateProduct, onDeleteProduct, onBulkGenerateDescriptions,
         formatCurrency, productToEdit, onDeleteOrder, onUpdateOrder,
-        onLogout, onAddUser, onUpdateUserRole, onDeleteUser
+        onLogout, onAddUser, onUpdateUserRole, onDeleteUser,
+        branches
     } = props;
     
     const isAdmin = user.role === 'admin';
     const canManageProducts = user.role === 'admin' || user.role === 'vendedor';
 
-    const allTabs = ['Productos', 'Pedidos', 'Usuarios', 'Categorías', 'Banners', 'General'];
-    const availableTabs = isAdmin ? allTabs : ['Productos', 'Pedidos'];
+    const allTabs = ['Productos', 'Pedidos', 'Sedes', 'Usuarios', 'Categorías', 'Banners', 'General'];
+    const availableTabs = isAdmin ? allTabs : ['Productos', 'Pedidos', 'Sedes'];
 
     const [activeTab, setActiveTab] = useState('Productos');
     
@@ -2624,6 +2631,8 @@ const AdminPanel: React.FC<AdminPanelProps> = (props) => {
             case 'Categorías':
                 return isAdmin ? <AdminCategoriesTab 
                             categories={props.store.categories}
+                            products={props.store.products}
+                            onUpdateProduct={onUpdateProduct}
                             onSave={onSaveCategories}
                         /> : null;
             case 'Banners':
@@ -2647,6 +2656,8 @@ const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                             onDelete={onDeleteOrder}
                             onUpdate={onUpdateOrder}
                         />;
+            case 'Sedes':
+                return <AdminBranchesTab branches={branches} />;
             case 'Usuarios':
                 return isAdmin ? <AdminUsersTab 
                             users={props.store.users}
@@ -2847,9 +2858,16 @@ const AdminProductsTab: React.FC<{
 };
 
 
-const AdminCategoriesTab: React.FC<{categories: Category[], onSave: (cats: Category[]) => void}> = ({ categories, onSave }) => {
+const AdminCategoriesTab: React.FC<{
+    categories: Category[], 
+    products: Product[],
+    onUpdateProduct: (p: Product) => void,
+    onSave: (cats: Category[]) => void
+}> = ({ categories, products, onUpdateProduct, onSave }) => {
     const [localCategories, setLocalCategories] = useState(categories || []);
     const [newCat, setNewCat] = useState('');
+    const [managedSpecial, setManagedSpecial] = useState<'featured' | 'newArrival' | null>(null);
+    const [searchTerm, setSearchTerm] = useState('');
     
     useEffect(() => {
         setLocalCategories(categories || []);
@@ -2865,24 +2883,151 @@ const AdminCategoriesTab: React.FC<{categories: Category[], onSave: (cats: Categ
         setLocalCategories(localCategories.filter(c => c !== catToRemove));
     };
     const handleSave = () => onSave(localCategories);
+
+    const toggleSpecial = (product: Product) => {
+        if (!managedSpecial) return;
+        const field = managedSpecial === 'featured' ? 'isFeatured' : 'isNewArrival';
+        onUpdateProduct({
+            ...product,
+            [field]: !product[field]
+        });
+    };
+
+    const filteredProducts = products.filter(p => 
+        p.name.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
+    if (managedSpecial) {
+        const title = managedSpecial === 'featured' ? 'En Tendencia (⭐)' : 'Recién Llegados (🆕)';
+        const field = managedSpecial === 'featured' ? 'isFeatured' : 'isNewArrival';
+
+        return (
+            <div className="p-6">
+                <div className="flex items-center gap-4 mb-6">
+                    <button onClick={() => setManagedSpecial(null)} className="p-2 hover:bg-gray-100 rounded-full">
+                        <ArrowLeftIcon className="w-5 h-5" />
+                    </button>
+                    <h1 className="text-2xl font-bold">Editar {title}</h1>
+                </div>
+
+                <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-100">
+                    <div className="flex items-center gap-4 mb-6">
+                        <div className="relative flex-1">
+                            <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                            <input 
+                                type="text" 
+                                placeholder="Buscar productos..." 
+                                value={searchTerm}
+                                onChange={e => setSearchTerm(e.target.value)}
+                                className="w-full pl-10 pr-4 py-2 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-primary/20 text-sm"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-[60vh] overflow-y-auto pr-2">
+                        {filteredProducts.map(product => (
+                            <div 
+                                key={product.id} 
+                                onClick={() => toggleSpecial(product)}
+                                className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-all cursor-pointer ${
+                                    product[field] 
+                                    ? 'border-primary bg-primary/5' 
+                                    : 'border-gray-100 hover:border-gray-200 bg-white'
+                                }`}
+                            >
+                                <img src={product.imageUrl} alt={product.name} className="w-12 h-12 object-cover rounded-lg" referrerPolicy="no-referrer" />
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-bold truncate">{product.name}</p>
+                                    <p className="text-xs text-gray-500">{product.category}</p>
+                                </div>
+                                <div className={`w-6 h-6 rounded-full flex items-center justify-center border-2 ${
+                                    product[field] ? 'bg-primary border-primary' : 'border-gray-200'
+                                }`}>
+                                    {product[field] && <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"/></svg>}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        );
+    }
     
     return (
         <div className="p-6">
             <h1 className="text-2xl font-bold mb-6">Categorías</h1>
-            <div className="bg-white rounded-lg shadow p-6 max-w-md">
-                <div className="flex space-x-2 mb-4">
-                    <AdminInput label="" type="text" value={newCat} onChange={e => setNewCat(e.target.value)} placeholder="Nueva categoría" />
-                    <button onClick={handleAdd} className="bg-primary text-white px-4 py-2 rounded-md hover:bg-primary-dark whitespace-nowrap self-end">Agregar</button>
-                </div>
-                <div className="space-y-2">
-                    {localCategories.map(cat => (
-                        <div key={cat} className="flex justify-between items-center p-2 bg-gray-50 rounded-md">
-                            <span>{cat}</span>
-                            <button onClick={() => handleRemove(cat)} className="text-red-500 hover:text-red-700"><TrashIcon className="w-5 h-5"/></button>
+            
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* Standard Categories */}
+                <div className="bg-white rounded-3xl shadow-xl p-8 border border-gray-100">
+                    <h2 className="text-lg font-bold mb-6 flex items-center gap-2">
+                        <MenuIcon className="w-5 h-5 text-gray-400" />
+                        Categorías del Menú
+                    </h2>
+                    <div className="flex space-x-2 mb-6">
+                        <div className="flex-1">
+                            <AdminInput label="" type="text" value={newCat} onChange={e => setNewCat(e.target.value)} placeholder="Nueva categoría..." />
                         </div>
-                    ))}
+                        <button onClick={handleAdd} className="bg-primary text-white px-6 py-2 rounded-xl hover:scale-105 transition-all whitespace-nowrap self-end">Agregar</button>
+                    </div>
+                    <div className="space-y-3">
+                        {localCategories.map(cat => (
+                            <div key={cat} className="flex justify-between items-center p-4 bg-gray-50 hover:bg-gray-100 rounded-2xl transition-colors group">
+                                <span className="font-medium">{cat}</span>
+                                <button onClick={() => handleRemove(cat)} className="text-red-400 hover:text-red-600 p-2 hover:bg-white rounded-full transition-all">
+                                    <TrashIcon className="w-5 h-5"/>
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                    <button onClick={handleSave} className="mt-8 w-full bg-green-500 text-white px-4 py-3 rounded-2xl font-bold hover:shadow-lg transition-all">Guardar Orden y Cambios</button>
                 </div>
-                <button onClick={handleSave} className="mt-6 w-full bg-green-500 text-white px-4 py-2 rounded-md hover:bg-green-600">Guardar Cambios</button>
+
+                {/* Special Dynamic Categories */}
+                <div className="space-y-6">
+                    <div className="bg-white rounded-3xl shadow-xl p-8 border border-gray-100">
+                        <h2 className="text-lg font-bold mb-6">Secciones Especiales</h2>
+                        <p className="text-sm text-gray-500 mb-6 italic">Estas secciones aparecen en la página de inicio y se basan en etiquetas personalizadas.</p>
+                        
+                        <div className="grid gap-4">
+                            <button 
+                                onClick={() => setManagedSpecial('featured')}
+                                className="flex items-center justify-between p-6 bg-gradient-to-r from-orange-50 to-amber-50 rounded-3xl border border-orange-100 hover:shadow-md transition-all group"
+                            >
+                                <div className="flex items-center gap-4 text-left">
+                                    <div className="text-3xl">⭐</div>
+                                    <div>
+                                        <p className="font-bold text-orange-900">En Tendencia</p>
+                                        <p className="text-xs text-orange-700">{products.filter(p => p.isFeatured).length} productos etiquetados</p>
+                                    </div>
+                                </div>
+                                <ArrowLeftIcon className="w-5 h-5 text-orange-400 rotate-180 group-hover:translate-x-1 transition-transform" />
+                            </button>
+
+                            <button 
+                                onClick={() => setManagedSpecial('newArrival')}
+                                className="flex items-center justify-between p-6 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-3xl border border-blue-100 hover:shadow-md transition-all group"
+                            >
+                                <div className="flex items-center gap-4 text-left">
+                                    <div className="text-3xl">🆕</div>
+                                    <div>
+                                        <p className="font-bold text-blue-900">Recién Llegados</p>
+                                        <p className="text-xs text-blue-700">{products.filter(p => p.isNewArrival).length} productos etiquetados</p>
+                                    </div>
+                                </div>
+                                <ArrowLeftIcon className="w-5 h-5 text-blue-400 rotate-180 group-hover:translate-x-1 transition-transform" />
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="bg-primary/10 p-8 rounded-3xl border border-primary/20">
+                        <h3 className="font-bold text-primary mb-2">Consejo Técnico</h3>
+                        <p className="text-sm text-primary/80 leading-relaxed">
+                            A diferencia de las categorías fijas, estas secciones son <strong>Dinámicas</strong>. 
+                            Puedes cambiar qué productos aparecen aquí sin moverlos de su categoría principal.
+                        </p>
+                    </div>
+                </div>
             </div>
         </div>
     );
@@ -3039,6 +3184,7 @@ const AdminGeneralTab: React.FC<{config: StoreConfig, onSave: (c: StoreConfig) =
                 <AdminInput label="Nombre de la Tienda" value={localConfig.contact.name} onChange={e => setLocalConfig({...localConfig, contact: {...localConfig.contact, name: e.target.value}})} />
                 <AdminInput label="Teléfono de Contacto" value={localConfig.contact.phone} onChange={e => setLocalConfig({...localConfig, contact: {...localConfig.contact, phone: e.target.value}})} />
                 <AdminInput label="Horario" value={localConfig.contact.schedule} onChange={e => setLocalConfig({...localConfig, contact: {...localConfig.contact, schedule: e.target.value}})} />
+                <AdminInput label="Instagram (URL completa)" value={localConfig.social.instagram} onChange={e => setLocalConfig({...localConfig, social: {...localConfig.social, instagram: e.target.value}})} />
                 <AdminInput label="TikTok (URL completa)" value={localConfig.social.tiktok} onChange={e => setLocalConfig({...localConfig, social: {...localConfig.social, tiktok: e.target.value}})} />
                 <AdminInput label="WhatsApp (con cód. país)" value={localConfig.social.whatsapp} onChange={e => setLocalConfig({...localConfig, social: {...localConfig.social, whatsapp: e.target.value}})} />
                 
@@ -3112,6 +3258,199 @@ const AdminUsersTab: React.FC<{
                 </table>
             </div>
         </div>
+    );
+};
+
+const AdminBranchesTab: React.FC<{ branches: StoreBranch[] }> = ({ branches }) => {
+    const handleAddBranch = async () => {
+        try {
+            await addDoc(collection(db, 'branches'), {
+                name: 'Nueva Sede',
+                address: 'Dirección #',
+                city: 'Valencia',
+                phone: '300 000 0000',
+                schedule: 'Lunes a Sábado: 9am - 7pm',
+                imageUrl: '',
+                mapLink: ''
+            });
+        } catch (error) {
+            console.error("Error adding branch:", error);
+        }
+    };
+
+    const handleUpdateBranch = async (branchId: string, field: string, value: any) => {
+        try {
+            await updateDoc(doc(db, 'branches', branchId), { [field]: value });
+        } catch (error) {
+            console.error("Error updating branch:", error);
+        }
+    };
+
+    const handleDeleteBranch = async (branchId: string) => {
+        if (!window.confirm('¿Estás seguro de eliminar esta sede?')) return;
+        try {
+            await deleteDoc(doc(db, 'branches', branchId));
+        } catch (error) {
+            console.error("Error deleting branch:", error);
+        }
+    };
+
+    return (
+        <div className="p-6 space-y-6">
+            <div className="flex justify-between items-center bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                <div>
+                    <h2 className="text-xl font-bold">Gestión de Sedes</h2>
+                    <p className="text-sm text-gray-500 italic">Administra la información de tus puntos físicos.</p>
+                </div>
+                <button 
+                  onClick={handleAddBranch}
+                  className="bg-primary text-white px-6 py-3 rounded-full font-bold hover:scale-105 transition-all shadow-lg flex items-center gap-2"
+                >
+                    <PlusIcon className="w-5 h-5" />
+                    Nueva Sede
+                </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                {branches.map((branch) => (
+                    <div key={branch.docId} className="bg-white p-8 rounded-3xl shadow-xl border border-gray-100 relative group">
+                        <button 
+                            onClick={() => handleDeleteBranch(branch.docId)}
+                            className="absolute top-4 right-4 p-2 text-red-500 hover:bg-red-50 rounded-full transition-colors opacity-0 group-hover:opacity-100"
+                        >
+                            <TrashIcon className="w-6 h-6" />
+                        </button>
+
+                        <div className="space-y-6">
+                            <AdminInput 
+                                label="Nombre de la Sede" 
+                                value={branch.name} 
+                                onChange={e => handleUpdateBranch(branch.docId, 'name', e.target.value)} 
+                            />
+                            <div className="grid grid-cols-2 gap-4">
+                                <AdminInput 
+                                    label="Ciudad" 
+                                    value={branch.city} 
+                                    onChange={e => handleUpdateBranch(branch.docId, 'city', e.target.value)} 
+                                />
+                                <AdminInput 
+                                    label="Teléfono" 
+                                    value={branch.phone} 
+                                    onChange={e => handleUpdateBranch(branch.docId, 'phone', e.target.value)} 
+                                />
+                            </div>
+                            <AdminInput 
+                                label="Dirección" 
+                                value={branch.address} 
+                                onChange={e => handleUpdateBranch(branch.docId, 'address', e.target.value)} 
+                            />
+                            <div className="flex flex-col gap-1">
+                                <label className="text-sm font-medium text-gray-700">Horario</label>
+                                <textarea 
+                                    rows={3}
+                                    className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+                                    value={branch.schedule}
+                                    onChange={e => handleUpdateBranch(branch.docId, 'schedule', e.target.value)}
+                                />
+                            </div>
+                            <ImageUpload 
+                                label="Foto de la Sede" 
+                                currentImage={branch.imageUrl} 
+                                onImageSelect={url => handleUpdateBranch(branch.docId, 'imageUrl', url)} 
+                            />
+                            <AdminInput 
+                                label="Enlace Google Maps (URL)" 
+                                value={branch.mapLink || ''} 
+                                onChange={e => handleUpdateBranch(branch.docId, 'mapLink', e.target.value)} 
+                                placeholder="https://maps.app.goo.gl/..."
+                            />
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
+
+const BranchesSection: React.FC<{ branches: StoreBranch[] }> = ({ branches }) => {
+    if (!branches || branches.length === 0) return null;
+
+    return (
+        <section className="py-20 bg-surface border-t border-gray-100">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div className="text-center mb-16">
+                    <h2 className="text-3xl md:text-5xl font-serif font-bold mb-6 text-on-surface cyber-text">Nuestras Sedes</h2>
+                    <p className="text-gray-500 max-w-2xl mx-auto text-lg italic">
+                        Visítanos y vive la experiencia Bombon Store en cualquiera de nuestros puntos físicos.
+                    </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
+                    {branches.map((branch) => (
+                        <motion.div 
+                            key={branch.docId}
+                            initial={{ opacity: 0, y: 20 }}
+                            whileInView={{ opacity: 1, y: 0 }}
+                            viewport={{ once: true }}
+                            className="bg-white rounded-3xl overflow-hidden shadow-2xl hover:shadow-primary/10 transition-all border border-gray-100 group"
+                        >
+                            <div className="relative aspect-[16/10] overflow-hidden">
+                                <img 
+                                    src={branch.imageUrl || 'https://images.unsplash.com/photo-1567401893414-76b7b1e5a7a5?q=80&w=800'} 
+                                    alt={branch.name} 
+                                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
+                                    referrerPolicy="no-referrer"
+                                />
+                                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end p-6">
+                                    <h3 className="text-white text-2xl font-bold font-serif">{branch.name}</h3>
+                                </div>
+                            </div>
+                            <div className="p-8 space-y-4">
+                                <div className="flex items-start gap-4">
+                                    <div className="p-2 bg-primary/10 rounded-lg">
+                                        <svg className="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                                    </div>
+                                    <div>
+                                        <p className="text-sm font-bold text-on-surface uppercase tracking-wider mb-1">Dirección</p>
+                                        <p className="text-gray-600">{branch.address}, {branch.city}</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-start gap-4">
+                                    <div className="p-2 bg-secondary/10 rounded-lg">
+                                        <svg className="w-5 h-5 text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                    </div>
+                                    <div>
+                                        <p className="text-sm font-bold text-on-surface uppercase tracking-wider mb-1">Horario</p>
+                                        <p className="text-gray-600 whitespace-pre-line">{branch.schedule}</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-start gap-4">
+                                    <div className="p-2 bg-accent/10 rounded-lg">
+                                        <svg className="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
+                                    </div>
+                                    <div>
+                                        <p className="text-sm font-bold text-on-surface uppercase tracking-wider mb-1">Contacto</p>
+                                        <p className="text-gray-600">{branch.phone}</p>
+                                    </div>
+                                </div>
+                                
+                                {branch.mapLink && (
+                                    <a 
+                                        href={branch.mapLink} 
+                                        target="_blank" 
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center gap-2 text-primary font-bold pt-4 hover:underline"
+                                    >
+                                        <span>Ver en Google Maps</span>
+                                        <ArrowLeftIcon className="w-4 h-4 rotate-180" />
+                                    </a>
+                                )}
+                            </div>
+                        </motion.div>
+                    ))}
+                </div>
+            </div>
+        </section>
     );
 };
 

@@ -98,6 +98,17 @@ export type ToastMessage = {
   type: 'success' | 'error';
 };
 
+export interface StoreBranch {
+  docId: string;
+  name: string;
+  address: string;
+  city: string;
+  phone: string;
+  schedule: string;
+  imageUrl: string;
+  mapLink?: string;
+}
+
 export interface User {
   uid: string;
   email: string | null;
