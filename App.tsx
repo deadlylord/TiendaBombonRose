@@ -285,11 +285,27 @@ const App: React.FC = () => {
     const products = useMemo(() => {
         if (!posInventory) return [];
         
+        const getCreatedAtVal = (it: any) => {
+            if (!it || !it.createdAt) return 0;
+            if (typeof it.createdAt === 'number') return it.createdAt;
+            if (it.createdAt.toMillis) return it.createdAt.toMillis();
+            if (it.createdAt.seconds) return it.createdAt.seconds * 1000;
+            return new Date(it.createdAt).getTime() || 0;
+        };
+
         // Consolidate stock by name/sku (assuming name is unique enough or there's a better key)
         const consolidated = posInventory.reduce((acc: any, item: any) => {
             const key = item.name || item.docId;
+            const itemCreatedAt = getCreatedAtVal(item);
+            
             if (!acc[key]) {
-                acc[key] = { ...item, stock: 0 };
+                acc[key] = { ...item, stock: 0, _createdAtMs: itemCreatedAt };
+            } else {
+                const currentCreatedAt = acc[key]._createdAtMs || 0;
+                if (itemCreatedAt > currentCreatedAt) {
+                    const currentStock = acc[key].stock;
+                    acc[key] = { ...item, stock: currentStock, _createdAtMs: itemCreatedAt };
+                }
             }
             acc[key].stock += (item.stock || 0);
             // Keep the first valid imageUrl/description etc
@@ -338,7 +354,8 @@ const App: React.FC = () => {
                     createdAt: getCreatedAt(item),
                     updatedAt: extension?.updatedAt || 0
                 } as Product;
-            });
+            })
+            .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
     }, [posInventory, productExtensions, posCategories]);
     
     const areProductsLoading = arePosProductsLoading || areExtensionsLoading || arePosCategoriesLoading;
@@ -507,7 +524,7 @@ const App: React.FC = () => {
     const cartSubtotal = useMemo(() => cart.reduce((sum, item) => sum + item.price * item.quantity, 0), [cart]);
     
     const filteredProducts = useMemo(() => {
-        return (products || []).filter(product => {
+        const filtered = (products || []).filter(product => {
             let matchesCategory = true;
             if (selectedCategory === 'On Sale') {
                 matchesCategory = product.discountPercentage != null && product.discountPercentage > 0;
@@ -529,6 +546,13 @@ const App: React.FC = () => {
             const matchesSearch = searchWords.every(word => searchableText.includes(word));
             
             return matchesCategory && matchesSearch;
+        });
+
+        // Ensure newly added items always show up first, matching the home screen ordering
+        return [...filtered].sort((a, b) => {
+            const dateA = Math.max(a.updatedAt || 0, a.createdAt || 0);
+            const dateB = Math.max(b.updatedAt || 0, b.createdAt || 0);
+            return dateB - dateA;
         });
     }, [products, selectedCategory, searchTerm]);
 
@@ -962,11 +986,22 @@ const App: React.FC = () => {
     
     // --- UI COMPONENTS ---
     const ToastContainer = () => (
-        <div className="fixed top-5 right-5 z-[100] space-y-2">
+        <div className="fixed bottom-5 right-5 md:bottom-8 md:right-8 z-[100] space-y-2 pointer-events-none">
             {toasts.map(toast => (
-                <div key={toast.id} className={`px-4 py-2 rounded-md shadow-lg text-white ${toast.type === 'success' ? 'bg-primary' : 'bg-red-500'}`}>
-                    {toast.message}
-                </div>
+                <motion.div 
+                    key={toast.id}
+                    initial={{ opacity: 0, y: 20, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    className={`pointer-events-auto px-5 py-3.5 rounded-2xl shadow-2xl text-white font-medium ${
+                        toast.type === 'success' 
+                        ? 'bg-primary/95 text-white' 
+                        : 'bg-red-500/95 text-white'
+                    } flex items-center gap-3 max-w-sm border border-white/10 backdrop-blur-md`}
+                >
+                    <span className="text-lg">{toast.type === 'success' ? '✨' : '⚠️'}</span>
+                    <span className="text-sm tracking-wide">{toast.message}</span>
+                </motion.div>
             ))}
         </div>
     );
@@ -1343,7 +1378,7 @@ const ProductCard: React.FC<{
                 <div className="absolute bottom-2 right-2">
                     <button
                       onClick={(e) => { e.stopPropagation(); onQuickAdd(product); }}
-                      className="bg-surface/80 backdrop-blur-sm text-primary rounded-full p-2 shadow-md hover:bg-surface transition-all scale-0 group-hover:scale-100 disabled:opacity-50 cyber-gradient-bg"
+                      className="bg-surface/90 backdrop-blur-sm text-primary rounded-full p-2 shadow-md hover:bg-surface transition-all scale-100 hover:scale-110 active:scale-95 disabled:opacity-50 cyber-gradient-bg"
                       aria-label="Agregar al carrito"
                       disabled={!product.available}
                     >
@@ -1641,7 +1676,11 @@ const Header: React.FC<{
                 <div className="max-w-7xl 2xl:max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 h-full">
                     <div className="flex items-center justify-between h-full">
                         <div className="flex-1 flex justify-start">
-                            <button className="md:hidden text-on-surface" onClick={() => setMobileMenuOpen(true)}>
+                            <button 
+                                className="text-on-surface hover:text-primary p-2 rounded-full hover:bg-gray-100/50 transition-all active:scale-90" 
+                                onClick={() => setMobileMenuOpen(true)}
+                                aria-label="Abrir menú"
+                            >
                                 <MenuIcon className="w-6 h-6" />
                             </button>
                         </div>
@@ -1652,13 +1691,30 @@ const Header: React.FC<{
                             </a>
                         </div>
 
-                        <div className="flex-1 flex justify-end items-center">
-                            <button onClick={onSearchClick} className="relative text-on-surface hover:text-primary p-2" aria-label="Buscar productos">
+                        <div className="flex-1 flex justify-end items-center gap-1">
+                            <button onClick={onSearchClick} className="relative text-on-surface hover:text-primary p-2 rounded-full hover:bg-gray-100/50 transition-all active:scale-90" aria-label="Buscar productos">
                                 <SearchIcon className="w-6 h-6" />
                             </button>
-                            <button onClick={onCartClick} className="relative text-on-surface hover:text-primary p-2" aria-label="Ver carrito de compras">
-                                <CartIcon className="w-6 h-6" />
-                                {cartItemCount > 0 && <span className="absolute -top-1 -right-1 bg-primary text-white text-xs rounded-full h-5 w-5 flex items-center justify-center" aria-label={`${cartItemCount} productos en el carrito`}>{cartItemCount}</span>}
+                            <button onClick={onCartClick} className="relative text-on-surface hover:text-primary p-2 rounded-full hover:bg-gray-100/50 transition-all active:scale-95 flex items-center justify-center min-w-10 min-h-10" aria-label="Ver carrito de compras">
+                                <motion.div
+                                    key={cartItemCount}
+                                    animate={cartItemCount > 0 ? { rotate: [-10, 10, -5, 5, 0], scale: [1, 1.15, 1] } : {}}
+                                    transition={{ duration: 0.45, ease: "easeInOut" }}
+                                >
+                                    <CartIcon className="w-6 h-6" />
+                                </motion.div>
+                                {cartItemCount > 0 && (
+                                    <motion.span 
+                                        key={`badge-${cartItemCount}`}
+                                        initial={{ scale: 0.5, opacity: 0 }}
+                                        animate={{ scale: 1, opacity: 1 }}
+                                        transition={{ type: "spring", stiffness: 500, damping: 15 }}
+                                        className="absolute top-1.5 right-1.5 bg-primary text-white text-[10px] font-black rounded-full h-5 w-5 flex items-center justify-center shadow-lg shadow-primary/30" 
+                                        aria-label={`${cartItemCount} productos en el carrito`}
+                                    >
+                                        {cartItemCount}
+                                    </motion.span>
+                                )}
                             </button>
                         </div>
                     </div>
