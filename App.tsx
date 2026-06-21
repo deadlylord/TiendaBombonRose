@@ -22,7 +22,13 @@ const initialConfig: StoreConfig = {
     secondLogoUrl: 'https://i.ibb.co/9GZ9m3z/street-legends-logo.png',
     contact: { name: 'Bombon Store', phone: '573001234567', schedule: 'Lunes a Sábado, 9am - 7pm' },
     social: { instagram: 'https://instagram.com', tiktok: 'https://tiktok.com', whatsapp: '573001234567' },
-    paymentMethodsImageUrl: 'https://i.ibb.co/QPDWf6s/medios-de-pago.png'
+    paymentMethodsImageUrl: 'https://i.ibb.co/QPDWf6s/medios-de-pago.png',
+    announcements: [
+        '✨ ¡Envío GRATIS por compras superiores a $200.000! 🇨🇴',
+        '⚡ Nueva Colección Street Legends disponible ya',
+        '💖 10% de descuento en tu primera compra con el código NUEVO10'
+    ],
+    showAnnouncements: true
 };
 
 const initialBanners: Banner[] = [
@@ -225,7 +231,7 @@ const useFirestoreDocSync = <T extends object>(collectionName: string, docId: st
         const unsubscribe = onSnapshot(docRef,
             (docSnap) => {
                 if (docSnap.exists()) {
-                    setData(docSnap.data() as T);
+                    setData({ ...initialValue, ...docSnap.data() } as T);
                 } else {
                     setDoc(docRef, initialValue).catch(error => console.error(`Firestore initial setDoc error for ${collectionName}/${docId}:`, error));
                 }
@@ -1159,6 +1165,7 @@ const App: React.FC = () => {
     }
 
     // --- MAIN RENDER ---
+    const hasAnnouncements = config?.showAnnouncements !== false && config?.announcements && config.announcements.some(ann => ann.trim() !== '');
     
     return (
         <div className="bg-background min-h-screen">
@@ -1176,13 +1183,17 @@ const App: React.FC = () => {
                 onAdminClick={handleOpenAdmin}
                 onSearchClick={() => navigate('/search')}
                 isMenTheme={isMenTheme}
+                config={config}
             />
+            
+            <div className={`transition-all ${hasAnnouncements ? 'h-28' : 'h-20'}`} />
             
             <CategoryNav
               categories={categories}
               selectedCategory={selectedCategory}
               onSelectCategory={handleCategoryButtonClick}
               isMenTheme={isMenTheme}
+              hasAnnouncements={hasAnnouncements}
             />
 
             <main className="pt-12">
@@ -1389,7 +1400,7 @@ const ProductCard: React.FC<{
 
     return (
         <div className="relative group bg-surface rounded-lg shadow-md overflow-hidden flex flex-col h-full cursor-pointer cyber-border" onClick={() => onOpenDetails(product)}>
-            <div className="relative aspect-[4/5] w-full overflow-hidden bg-surface/50">
+            <div className="relative aspect-[3/4] w-full overflow-hidden bg-surface/50">
                 <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" referrerPolicy="no-referrer" />
                 {!product.available && (
                     <div className="absolute top-2 left-2 bg-on-surface text-background text-xs font-bold px-2 py-1 rounded">AGOTADO</div>
@@ -1666,8 +1677,9 @@ const Header: React.FC<{
     currentUser: FirebaseUser | null,
     onAdminClick: () => void,
     onSearchClick: () => void,
-    isMenTheme?: boolean
-}> = ({ logoUrl, cartItemCount, onCartClick, isMobileMenuOpen, setMobileMenuOpen, categories, onSelectCategory, selectedCategory, currentUser, onAdminClick, onSearchClick, isMenTheme }) => {
+    isMenTheme?: boolean,
+    config?: StoreConfig
+}> = ({ logoUrl, cartItemCount, onCartClick, isMobileMenuOpen, setMobileMenuOpen, categories, onSelectCategory, selectedCategory, currentUser, onAdminClick, onSearchClick, isMenTheme, config }) => {
     
     const baseLinkClasses = 'block text-lg px-4 py-3 rounded-md transition-colors';
     const activeLinkClasses = `font-semibold cyber-text ${isMenTheme ? 'cyber-gradient-bg text-white' : 'bg-primary/20 text-primary'}`;
@@ -1692,10 +1704,15 @@ const Header: React.FC<{
         });
     };
 
+    const hasAnnouncements = config?.showAnnouncements !== false && config?.announcements && config.announcements.some(ann => ann.trim() !== '');
+
     return (
         <>
-            <header className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-sm shadow-md h-20">
-                <div className="max-w-7xl 2xl:max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 h-full">
+            <header className={`fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-sm shadow-md transition-all flex flex-col ${hasAnnouncements ? 'h-28' : 'h-20'}`}>
+                {hasAnnouncements && (
+                    <AnnouncementBar announcements={config.announcements || []} isMenTheme={isMenTheme} />
+                )}
+                <div className="max-w-7xl 2xl:max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 w-full h-20">
                     <div className="flex items-center justify-between h-full">
                         <div className="flex-1 flex justify-start">
                             <button 
@@ -1797,9 +1814,10 @@ const CategoryNav: React.FC<{
     selectedCategory: string;
     onSelectCategory: (category: Category | 'All') => void;
     isMenTheme?: boolean;
-}> = ({ categories, selectedCategory, onSelectCategory, isMenTheme }) => {
+    hasAnnouncements?: boolean;
+}> = ({ categories, selectedCategory, onSelectCategory, isMenTheme, hasAnnouncements }) => {
     return (
-        <nav className="bg-surface border-b border-gray-200 sticky top-20 z-40">
+        <nav className={`bg-surface border-b border-gray-200 sticky ${hasAnnouncements ? 'top-[112px]' : 'top-20'} z-40 transition-all`}>
             <div className="max-w-7xl 2xl:max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="flex items-center space-x-2 overflow-x-auto scrollbar-hide py-3 md:justify-center">
                     <button
@@ -1820,6 +1838,51 @@ const CategoryNav: React.FC<{
                 </div>
             </div>
         </nav>
+    );
+};
+
+const AnnouncementBar: React.FC<{ announcements: string[]; isMenTheme?: boolean }> = ({ announcements, isMenTheme }) => {
+    const [currentIndex, setCurrentIndex] = useState(0);
+
+    const validAnnouncements = useMemo(() => {
+        return (announcements || []).filter(ann => ann && typeof ann === 'string' && ann.trim() !== '');
+    }, [announcements]);
+
+    useEffect(() => {
+        if (!validAnnouncements || validAnnouncements.length <= 1) return;
+        const timer = setInterval(() => {
+            setCurrentIndex(prev => (prev + 1) % validAnnouncements.length);
+        }, 4000);
+        return () => clearInterval(timer);
+    }, [validAnnouncements]);
+
+    if (validAnnouncements.length === 0) return null;
+
+    return (
+        <div className={`w-full h-8 flex items-center justify-center font-bold text-xs text-center px-4 overflow-hidden relative select-none ${
+            isMenTheme 
+            ? 'cyber-gradient-bg text-white tracking-widest uppercase text-[9px]' 
+            : 'bg-primary text-white tracking-[0.2em] text-[9px] uppercase'
+        }`} id="top-announcement-bar">
+            {validAnnouncements.length === 1 ? (
+                <span className="truncate">{validAnnouncements[0]}</span>
+            ) : (
+                <div className="relative w-full h-full flex items-center justify-center">
+                    {validAnnouncements.map((ann, idx) => (
+                        <div
+                            key={idx}
+                            className={`absolute inset-0 flex items-center justify-center transition-all duration-700 ease-in-out ${
+                                idx === currentIndex 
+                                    ? 'opacity-100 transform translate-y-0' 
+                                    : 'opacity-0 transform translate-y-2 pointer-events-none'
+                            }`}
+                        >
+                            <span className="truncate px-4">{ann}</span>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
     );
 };
 
@@ -1851,11 +1914,11 @@ const BannerCarousel: React.FC<{ banners: Banner[]; onNavigateToCategory: (categ
     };
 
     if (!banners || banners.length === 0) {
-        return <div className={`h-96 md:h-[500px] flex items-center justify-center ${isMenTheme ? 'bg-black text-gray-400' : 'bg-gray-200 text-gray-500'}`}>No hay banners para mostrar.</div>;
+        return <div className={`h-[520px] sm:h-[480px] md:h-[500px] flex items-center justify-center ${isMenTheme ? 'bg-black text-gray-400' : 'bg-gray-200 text-gray-500'}`}>No hay banners para mostrar.</div>;
     }
 
     return (
-        <div className={`relative w-full h-96 md:h-[500px] overflow-hidden ${isMenTheme ? 'bg-black' : 'bg-gray-100'}`}>
+        <div className={`relative w-full h-[520px] sm:h-[480px] md:h-[500px] overflow-hidden ${isMenTheme ? 'bg-black' : 'bg-gray-100'}`}>
             {banners.map((banner, index) => (
                 <div key={banner.id} className={`absolute inset-0 transition-opacity duration-1000 ${index === currentIndex ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
                     <img src={banner.imageUrl} alt={banner.title} className="w-full h-full object-cover" />
@@ -3265,6 +3328,79 @@ const AdminGeneralTab: React.FC<{config: StoreConfig, onSave: (c: StoreConfig) =
                 <AdminInput label="Instagram (URL completa)" value={localConfig.social.instagram} onChange={e => setLocalConfig({...localConfig, social: {...localConfig.social, instagram: e.target.value}})} />
                 <AdminInput label="TikTok (URL completa)" value={localConfig.social.tiktok} onChange={e => setLocalConfig({...localConfig, social: {...localConfig.social, tiktok: e.target.value}})} />
                 <AdminInput label="WhatsApp (con cód. país)" value={localConfig.social.whatsapp} onChange={e => setLocalConfig({...localConfig, social: {...localConfig.social, whatsapp: e.target.value}})} />
+                
+                {/* Banner de Anuncios Superior */}
+                <div className="border-t border-gray-200 pt-6 space-y-4">
+                    <h3 className="text-lg font-semibold text-gray-800">Banner de Anuncios (Cintillo Superior Rotativo)</h3>
+                    <p className="text-xs text-gray-500">Un banner con auto-desplazamiento ubicado en la parte superior de la página para mostrar varias promociones o mensajes.</p>
+                    
+                    <div className="flex items-center space-x-2 bg-gray-50 p-3 rounded-lg">
+                        <input 
+                            type="checkbox" 
+                            id="showAnnouncements" 
+                            checked={localConfig.showAnnouncements !== false}
+                            onChange={e => setLocalConfig({...localConfig, showAnnouncements: e.target.checked})}
+                            className="rounded border-gray-300 text-primary focus:ring-primary h-4 w-4"
+                        />
+                        <label htmlFor="showAnnouncements" className="text-sm font-medium text-gray-700 cursor-pointer">
+                            Activar banner de anuncios rotativo
+                        </label>
+                    </div>
+
+                    {localConfig.showAnnouncements !== false && (
+                        <div className="space-y-3">
+                            <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest pl-1">
+                                Mensajes Promocionales
+                            </label>
+                            
+                            {(localConfig.announcements || []).map((ann, idx) => (
+                                <div key={idx} className="flex space-x-2 items-center">
+                                    <input 
+                                        type="text" 
+                                        value={ann} 
+                                        onChange={e => {
+                                            const updatedAnns = [...(localConfig.announcements || [])];
+                                            updatedAnns[idx] = e.target.value;
+                                            setLocalConfig({...localConfig, announcements: updatedAnns});
+                                        }}
+                                        className="flex-1 bg-gray-50 border border-gray-200 rounded-lg py-2 px-4 focus:ring-2 focus:ring-primary/20 outline-none text-sm"
+                                        placeholder="Ej: ✨ ¡Envío GRATIS por compras superiores a $200.000!"
+                                    />
+                                    <button 
+                                        type="button"
+                                        onClick={() => {
+                                            const updatedAnns = (localConfig.announcements || []).filter((_, i) => i !== idx);
+                                            setLocalConfig({...localConfig, announcements: updatedAnns});
+                                        }}
+                                        className="text-red-500 hover:text-red-700 p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                                        title="Eliminar mensaje"
+                                    >
+                                        <TrashIcon className="w-5 h-5" />
+                                    </button>
+                                </div>
+                            ))}
+
+                            {(!localConfig.announcements || localConfig.announcements.length === 0) && (
+                                <p className="text-sm text-gray-400 italic pl-1">No hay mensajes configurados. Agrega uno abajo.</p>
+                            )}
+
+                            <button 
+                                type="button"
+                                onClick={() => {
+                                    const currentAnnouncements = localConfig.announcements || [];
+                                    setLocalConfig({
+                                        ...localConfig, 
+                                        announcements: [...currentAnnouncements, '']
+                                    });
+                                }}
+                                className="text-xs text-blue-600 hover:text-blue-800 font-bold flex items-center space-x-1 mt-2 bg-blue-50 hover:bg-blue-100 px-3 py-2 rounded-lg transition-colors inline-flex"
+                            >
+                                <PlusIcon className="w-4 h-4" />
+                                <span>Agregar Nuevo Mensaje</span>
+                            </button>
+                        </div>
+                    )}
+                </div>
                 
                 <button 
                     onClick={handleSave} 
