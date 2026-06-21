@@ -158,6 +158,28 @@ const generateProductDescription = async (productName: string, imageUrl?: string
 };
 
 // --- Helper Functions ---
+const safeJsonStringify = (val: any): string => {
+    try {
+        return JSON.stringify(val);
+    } catch (err) {
+        try {
+            const seen = new WeakSet();
+            return JSON.stringify(val, (_key, value) => {
+                if (typeof value === 'object' && value !== null) {
+                    if (seen.has(value)) {
+                        return undefined;
+                    }
+                    seen.add(value);
+                }
+                return value;
+            });
+        } catch (innerErr) {
+            console.error("Critical error stringifying circular structure:", innerErr);
+            return "[]";
+        }
+    }
+};
+
 const useBrowserStorage = <T,>(key: string, initialValue: T): [T, React.Dispatch<React.SetStateAction<T>>] => {
   const [storedValue, setStoredValue] = useState<T>(() => {
     try {
@@ -175,7 +197,7 @@ const useBrowserStorage = <T,>(key: string, initialValue: T): [T, React.Dispatch
       setStoredValue(valueToStore);
       
       try {
-        window.localStorage.setItem(key, JSON.stringify(valueToStore));
+        window.localStorage.setItem(key, safeJsonStringify(valueToStore));
       } catch (error) {
         if (error instanceof DOMException && (error.name === 'QuotaExceededError' || error.code === 22)) {
           console.warn(
@@ -183,7 +205,7 @@ const useBrowserStorage = <T,>(key: string, initialValue: T): [T, React.Dispatch
             `The latest changes will not be persisted across sessions.`
           );
         } else {
-          throw error;
+          console.error(`Error writing to localStorage for key "${key}":`, error);
         }
       }
     } catch (error) {
@@ -993,11 +1015,11 @@ const App: React.FC = () => {
                     initial={{ opacity: 0, y: 20, scale: 0.95 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.9 }}
-                    className={`pointer-events-auto px-5 py-3.5 rounded-2xl shadow-2xl text-white font-medium ${
+                    className={`pointer-events-auto px-5 py-3.5 rounded-2xl shadow-2xl font-semibold ${
                         toast.type === 'success' 
-                        ? 'bg-primary/95 text-white' 
-                        : 'bg-red-500/95 text-white'
-                    } flex items-center gap-3 max-w-sm border border-white/10 backdrop-blur-md`}
+                        ? 'bg-white/90 text-primary border border-primary/30' 
+                        : 'bg-red-500/95 text-white border border-white/10'
+                    } flex items-center gap-3 max-w-sm backdrop-blur-md`}
                 >
                     <span className="text-lg">{toast.type === 'success' ? '✨' : '⚠️'}</span>
                     <span className="text-sm tracking-wide">{toast.message}</span>
