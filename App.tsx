@@ -3608,7 +3608,7 @@ const BranchesSection: React.FC<{ branches: StoreBranch[] }> = ({ branches }) =>
                             viewport={{ once: true }}
                             className="bg-white rounded-3xl overflow-hidden shadow-2xl hover:shadow-primary/10 transition-all border border-gray-100 group"
                         >
-                            <div className="relative aspect-[16/10] overflow-hidden">
+                            <div className="relative aspect-[3/4] overflow-hidden">
                                 <img 
                                     src={branch.imageUrl || 'https://images.unsplash.com/photo-1567401893414-76b7b1e5a7a5?q=80&w=800'} 
                                     alt={branch.name} 
