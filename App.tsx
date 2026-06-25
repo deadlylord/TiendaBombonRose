@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from "motion/react";
 import { Product, Category, Banner, StoreConfig, CartItem, Order, ToastMessage, ProductVariantDetail, ProductColorVariantDetail, ProductVariants, User, StoreBranch } from './types';
-import { GoogleGenAI } from "@google/genai";
 import { db, storage, auth } from './services/firebase';
 import { posDb } from './services/posFirebase';
 import { doc, getDoc, onSnapshot, setDoc, collection, addDoc, updateDoc, deleteDoc, runTransaction } from 'firebase/firestore';
@@ -28,7 +27,11 @@ const initialConfig: StoreConfig = {
         '⚡ Nueva Colección Street Legends disponible ya',
         '💖 10% de descuento en tu primera compra con el código NUEVO10'
     ],
-    showAnnouncements: true
+    showAnnouncements: true,
+    shippingCostAmount: 10000,
+    shippingCostBogota: 10000,
+    shippingCostNational: 15000,
+    freeShippingThreshold: 200000
 };
 
 const initialBanners: Banner[] = [
@@ -70,96 +73,33 @@ const getValidColor = (colorName: string) => {
 };
 
 // --- AI Service ---
-const urlToBase64 = async (url: string): Promise<{ data: string, mimeType: string } | null> => {
-    try {
-        const response = await fetch(url);
-        const blob = await response.blob();
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                const base64data = (reader.result as string).split(',')[1];
-                resolve({ data: base64data, mimeType: blob.type });
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(blob);
-        });
-    } catch (error) {
-        console.error("Error converting URL to base64:", error);
-        return null;
-    }
-};
-
 const generateProductDescription = async (productName: string, imageUrl?: string): Promise<{ name: string, description: string } | string> => {
     try {
-        const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
-        if (!apiKey) {
-            return "Error: No se encontró la clave de API de Gemini. Por favor, configúrala en el menú 'Settings' de AI Studio (arriba a la derecha).";
-        }
+        const response = await fetch('/api/gemini/generate-description', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ productName, imageUrl })
+        });
         
-        const ai = new GoogleGenAI({ apiKey });
-        
-        const parts: any[] = [{
-            text: `Genera una descripción atractiva y muy breve para una tienda de ropa llamada "Bombon Store". 
-            Producto actual: "${productName}". 
-            Tono: Moderno y sofisticado. 
-            Idioma: Español. 
-            Instrucciones: 
-            1. Analiza la imagen adjunta para destacar materiales, texturas, accesorios o detalles específicos que se vean.
-            2. Sugiere un NOMBRE CORTO y llamativo para el producto (máximo 4 palabras).
-            3. Genera una DESCRIPCIÓN de máximo 30 palabras en un solo párrafo.
-            
-            Responde ÚNICAMENTE en formato JSON con la siguiente estructura:
-            {
-              "name": "nombre sugerido",
-              "description": "descripción sugerida"
-            }`
-        }];
-
-        if (imageUrl) {
-            const imageData = await urlToBase64(imageUrl);
-            if (imageData) {
-                parts.push({
-                    inlineData: {
-                        data: imageData.data,
-                        mimeType: imageData.mimeType
-                    }
-                });
+        if (!response.ok) {
+            try {
+                const errData = await response.json();
+                return `Error: ${errData.error || 'No se pudo generar la descripción.'}`;
+            } catch (jsonErr) {
+                return `Error: Servidor devolvió código de estado ${response.status}`;
             }
         }
-
-        const response = await ai.models.generateContent({
-            model: "gemini-3-flash-preview",
-            config: {
-                systemInstruction: "Eres un redactor experto en moda y branding. Tu tarea es generar un nombre corto y una descripción para productos de ropa. Responde siempre en formato JSON puro, sin markdown ni texto adicional.",
-                responseMimeType: "application/json"
-            },
-            contents: [{ parts }]
-        });
-
-        if (!response.text) {
-            return "Error: La IA devolvió una respuesta vacía.";
-        }
-
-        try {
-            const result = JSON.parse(response.text.trim());
-            return {
-                name: result.name || productName,
-                description: result.description || "Sin descripción generada."
-            };
-        } catch (e) {
-            console.error("Error parsing AI JSON:", e);
-            return response.text.trim(); // Fallback to raw text if not JSON
-        }
+        
+        const data = await response.json();
+        return {
+            name: data.name,
+            description: data.description
+        };
     } catch (error: any) {
         console.error("Error generating AI description:", error);
-        const errorMsg = error.message || "Error desconocido";
-        if (errorMsg.includes("API key not valid")) {
-            return "Error: La API Key de Gemini no es válida.";
-        }
-        if (errorMsg.includes("model not found") || errorMsg.includes("404")) {
-            return "Error: El modelo de IA solicitado no está disponible actualmente.";
-        }
-        return `Error al generar descripción: ${errorMsg}`;
+        return `Error: ${error.message || "Error de conexión con el servidor."}`;
     }
 };
 
@@ -1364,6 +1304,7 @@ const App: React.FC = () => {
                 onClearCart={handleClearCart}
                 onContinueShopping={closeModal}
                 isMenTheme={isMenTheme}
+                config={config}
             />}
             {renderAdminView()}
             {selectedProduct && <ProductDetailModal product={selectedProduct} onClose={closeModal} onAddToCart={handleAddToCart} formatCurrency={formatCurrency} showToast={showToast} allProducts={products} config={config} />}
@@ -1956,8 +1897,9 @@ const CartPanel: React.FC<{
     onClearCart: () => void;
     onContinueShopping: () => void;
     isMenTheme?: boolean;
-}> = ({ onClose, cart, subtotal, onUpdateQuantity, onRemoveItem, onCheckout, formatCurrency, suggestedProducts, onAddSuggestedProduct, onClearCart, onContinueShopping, isMenTheme }) => {
-    const FREE_SHIPPING_THRESHOLD = 300000;
+    config?: StoreConfig;
+}> = ({ onClose, cart, subtotal, onUpdateQuantity, onRemoveItem, onCheckout, formatCurrency, suggestedProducts, onAddSuggestedProduct, onClearCart, onContinueShopping, isMenTheme, config }) => {
+    const FREE_SHIPPING_THRESHOLD = config?.freeShippingThreshold !== undefined ? config.freeShippingThreshold : 200000;
     const missingForFreeShipping = Math.max(0, FREE_SHIPPING_THRESHOLD - subtotal);
     const progressPercentage = Math.min(100, (subtotal / FREE_SHIPPING_THRESHOLD) * 100);
     
@@ -2433,17 +2375,21 @@ const InvoiceModal: React.FC<{
     onClose: () => void, cart: CartItem[], subtotal: number,
     onSubmitOrder: (order: Omit<Order, 'docId' | 'orderNumber' | 'status' | 'date'>) => void, config: StoreConfig,
     formatCurrency: (amount: number) => string
-}> = ({ onClose, cart, subtotal, onSubmitOrder, formatCurrency }) => {
+}> = ({ onClose, cart, subtotal, onSubmitOrder, config, formatCurrency }) => {
     const [customerName, setCustomerName] = useState('');
     const [customerPhone, setCustomerPhone] = useState('');
     const [deliveryMethod, setDeliveryMethod] = useState<'Recoger en Tienda' | 'Envío a Domicilio'>('Recoger en Tienda');
+    const [shippingDestination, setShippingDestination] = useState<'Bogotá' | 'Nacional'>('Bogotá');
     const [address, setAddress] = useState('');
     const [paymentMethod, setPaymentMethod] = useState('Nequi');
 
     const paymentOptions = ['Nequi', 'Daviplata', 'Tarjeta', 'Addi', 'Sistecredito'];
-    const FREE_SHIPPING_THRESHOLD = 150000;
-    const SHIPPING_COST = 10000;
-    const shippingCost = deliveryMethod === 'Envío a Domicilio' && subtotal < FREE_SHIPPING_THRESHOLD ? SHIPPING_COST : 0;
+    const FREE_SHIPPING_THRESHOLD = config?.freeShippingThreshold !== undefined ? config.freeShippingThreshold : 200000;
+    const SHIPPING_COST_BOGOTA = config?.shippingCostBogota !== undefined ? config.shippingCostBogota : (config?.shippingCostAmount !== undefined ? config.shippingCostAmount : 10000);
+    const SHIPPING_COST_NATIONAL = config?.shippingCostNational !== undefined ? config.shippingCostNational : 15000;
+    
+    const baseShippingCost = shippingDestination === 'Bogotá' ? SHIPPING_COST_BOGOTA : SHIPPING_COST_NATIONAL;
+    const shippingCost = deliveryMethod === 'Envío a Domicilio' && subtotal < FREE_SHIPPING_THRESHOLD ? baseShippingCost : 0;
     const total = subtotal + shippingCost;
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -2473,7 +2419,7 @@ const InvoiceModal: React.FC<{
             shippingCost,
             total,
             deliveryMethod,
-            ...(deliveryMethod === 'Envío a Domicilio' && { address }),
+            ...(deliveryMethod === 'Envío a Domicilio' && { address: `${address} (${shippingDestination})` }),
             paymentMethod,
         };
         
@@ -2509,9 +2455,22 @@ const InvoiceModal: React.FC<{
                         </label>
                      </div>
                      {deliveryMethod === 'Envío a Domicilio' && (
-                        <div>
-                           <label className="block text-sm font-medium mb-1">Dirección Completa</label>
-                           <input type="text" value={address} onChange={e => setAddress(e.target.value)} required className="w-full bg-surface border border-gray-300 rounded-md px-3 py-2 focus:ring-primary focus:border-primary" />
+                        <div className="space-y-3">
+                            <div>
+                               <label className="block text-sm font-medium mb-1">Dirección Completa</label>
+                               <input type="text" value={address} onChange={e => setAddress(e.target.value)} required className="w-full bg-surface border border-gray-300 rounded-md px-3 py-2 focus:ring-primary focus:border-primary" />
+                            </div>
+                            <div>
+                               <label className="block text-sm font-medium mb-1">Destino de Envío</label>
+                               <select 
+                                   value={shippingDestination} 
+                                   onChange={e => setShippingDestination(e.target.value as 'Bogotá' | 'Nacional')}
+                                   className="w-full bg-surface border border-gray-300 rounded-md px-3 py-2 focus:ring-primary focus:border-primary"
+                               >
+                                   <option value="Bogotá">Bogotá — {formatCurrency(SHIPPING_COST_BOGOTA)}</option>
+                                   <option value="Nacional">Nivel Nacional — {formatCurrency(SHIPPING_COST_NATIONAL)}</option>
+                               </select>
+                            </div>
                         </div>
                      )}
                      <h3 className="font-semibold text-lg border-b pb-2 pt-4">Medio de Pago</h3>
@@ -3328,6 +3287,39 @@ const AdminGeneralTab: React.FC<{config: StoreConfig, onSave: (c: StoreConfig) =
                 <AdminInput label="Instagram (URL completa)" value={localConfig.social.instagram} onChange={e => setLocalConfig({...localConfig, social: {...localConfig.social, instagram: e.target.value}})} />
                 <AdminInput label="TikTok (URL completa)" value={localConfig.social.tiktok} onChange={e => setLocalConfig({...localConfig, social: {...localConfig.social, tiktok: e.target.value}})} />
                 <AdminInput label="WhatsApp (con cód. país)" value={localConfig.social.whatsapp} onChange={e => setLocalConfig({...localConfig, social: {...localConfig.social, whatsapp: e.target.value}})} />
+                
+                {/* Costos de Envío y Domicilio */}
+                <div className="border-t border-gray-200 pt-6 space-y-4">
+                    <h3 className="text-lg font-semibold text-gray-800">Costos de Envío</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <AdminInput 
+                            label="Costo de Envío a Bogotá ($ COP)" 
+                            type="number"
+                            value={localConfig.shippingCostBogota !== undefined ? localConfig.shippingCostBogota : (localConfig.shippingCostAmount !== undefined ? localConfig.shippingCostAmount : '')} 
+                            onChange={e => setLocalConfig({
+                                ...localConfig, 
+                                shippingCostBogota: e.target.value !== '' ? Number(e.target.value) : undefined
+                            })} 
+                        />
+                        <AdminInput 
+                            label="Costo de Envío Nacional ($ COP)" 
+                            type="number"
+                            value={localConfig.shippingCostNational !== undefined ? localConfig.shippingCostNational : ''} 
+                            onChange={e => setLocalConfig({
+                                ...localConfig, 
+                                shippingCostNational: e.target.value !== '' ? Number(e.target.value) : undefined
+                            })} 
+                        />
+                        <div className="md:col-span-2">
+                            <AdminInput 
+                                label="Mínimo de Compra para Envío Gratis ($ COP)" 
+                                type="number"
+                                value={localConfig.freeShippingThreshold !== undefined ? localConfig.freeShippingThreshold : ''} 
+                                onChange={e => setLocalConfig({...localConfig, freeShippingThreshold: e.target.value !== '' ? Number(e.target.value) : undefined})} 
+                            />
+                        </div>
+                    </div>
+                </div>
                 
                 {/* Banner de Anuncios Superior */}
                 <div className="border-t border-gray-200 pt-6 space-y-4">

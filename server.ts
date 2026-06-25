@@ -3,6 +3,7 @@ import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import axios from 'axios';
 import { fileURLToPath } from 'url';
+import { GoogleGenAI } from "@google/genai";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -12,6 +13,96 @@ async function startServer() {
   const PORT = 3000;
 
   app.use(express.json());
+
+  // Gemini API Description Generation Endpoint
+  app.post('/api/gemini/generate-description', async (req, res) => {
+    const { productName, imageUrl } = req.body;
+    if (!productName) {
+      return res.status(400).json({ error: 'El nombre del producto es requerido' });
+    }
+
+    const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: 'No se encontró la clave de API de Gemini. Por favor, configúrala en el menú de Secrets del proyecto.' });
+    }
+
+    try {
+      const ai = new GoogleGenAI({ 
+        apiKey,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          }
+        }
+      });
+
+      const parts: any[] = [{
+        text: `Genera una descripción atractiva y muy breve para una tienda de ropa llamada "Bombon Store". 
+        Producto actual: "${productName}". 
+        Tono: Moderno y sofisticado. 
+        Idioma: Español. 
+        Instrucciones: 
+        1. Analiza la imagen adjunta para destacar materiales, texturas, accesorios o detalles específicos que se vean.
+        2. Sugiere un NOMBRE CORTO y llamativo para el producto (máximo 4 palabras).
+        3. Genera una DESCRIPCIÓN de máximo 30 palabras en un solo párrafo.
+        
+        Responde ÚNICAMENTE en formato JSON con la siguiente estructura:
+        {
+          "name": "nombre sugerido",
+          "description": "descripción sugerida"
+        }`
+      }];
+
+      if (imageUrl) {
+        try {
+          const responseImage = await axios.get(imageUrl, { responseType: 'arraybuffer' });
+          const base64Data = Buffer.from(responseImage.data, 'binary').toString('base64');
+          const mimeType = responseImage.headers['content-type'] || 'image/jpeg';
+          parts.push({
+            inlineData: {
+              data: base64Data,
+              mimeType
+            }
+          });
+        } catch (imageErr: any) {
+          console.error("Error fetching image for Gemini:", imageErr.message || imageErr);
+          // Continue without image if fetch fails
+        }
+      }
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        config: {
+          systemInstruction: "Eres un redactor experto en moda y branding. Tu tarea es generar un nombre corto y una descripción para productos de ropa. Responde siempre en formato JSON puro, sin markdown ni texto adicional.",
+          responseMimeType: "application/json"
+        },
+        contents: [{ parts }]
+      });
+
+      if (!response.text) {
+        return res.status(500).json({ error: 'La IA devolvió una respuesta vacía.' });
+      }
+
+      const cleanedText = response.text.trim();
+      
+      let nameSugerido = productName;
+      let descSugerida = "Sin descripción generada.";
+
+      try {
+        const result = JSON.parse(cleanedText);
+        nameSugerido = result.name || productName;
+        descSugerida = result.description || descSugerida;
+      } catch (e) {
+        console.error("Error parsing AI JSON on server:", e);
+        descSugerida = cleanedText;
+      }
+
+      res.json({ name: nameSugerido, description: descSugerida });
+    } catch (error: any) {
+      console.error("Error calling Gemini API:", error);
+      res.status(500).json({ error: error.message || 'Error al generar descripción.' });
+    }
+  });
 
   // Instagram OAuth Routes
   app.get('/api/auth/instagram/url', (req, res) => {

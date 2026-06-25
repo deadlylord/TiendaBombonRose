@@ -65,6 +65,10 @@ export interface StoreConfig {
   instagramAccessToken?: string;
   announcements?: string[];
   showAnnouncements?: boolean;
+  shippingCostAmount?: number;
+  shippingCostBogota?: number;
+  shippingCostNational?: number;
+  freeShippingThreshold?: number;
 }
 
 export interface CartItem {
