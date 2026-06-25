@@ -560,10 +560,11 @@ const App: React.FC = () => {
         showToast(`Iniciando generación masiva para ${productsToUpdate.length} productos...`);
         
         let successCount = 0;
+        let lastError = '';
         for (const product of productsToUpdate) {
             try {
                 const result = await generateProductDescription(product.name, product.imageUrl);
-                if (result && typeof result === 'object' && !('startsWith' in result)) {
+                if (result && typeof result === 'object') {
                     const updatedProduct = { ...product, description: result.description, name: result.name };
                     // We call handleUpdateProduct directly to persist each one
                     const extension = {
@@ -577,13 +578,22 @@ const App: React.FC = () => {
                     };
                     await setDoc(doc(db, 'product_extensions', updatedProduct.id), extension, { merge: true });
                     successCount++;
+                } else if (typeof result === 'string' && result.startsWith('Error')) {
+                    lastError = result;
                 }
-            } catch (err) {
+            } catch (err: any) {
                 console.error(`Error en producto ${product.name}:`, err);
+                lastError = err.message || 'Error desconocido';
             }
         }
         
-        showToast(`¡Proceso completado! Se generaron ${successCount} descripciones.`);
+        if (successCount > 0) {
+            showToast(`¡Proceso completado! Se generaron ${successCount} descripciones.`);
+        } else if (lastError) {
+            alert(`No se pudo generar ninguna descripción. Último error:\n${lastError}`);
+        } else {
+            showToast('No se generaron descripciones.', 'error');
+        }
     };
 
     // --- EVENT HANDLERS ---
@@ -1899,7 +1909,7 @@ const CartPanel: React.FC<{
     isMenTheme?: boolean;
     config?: StoreConfig;
 }> = ({ onClose, cart, subtotal, onUpdateQuantity, onRemoveItem, onCheckout, formatCurrency, suggestedProducts, onAddSuggestedProduct, onClearCart, onContinueShopping, isMenTheme, config }) => {
-    const FREE_SHIPPING_THRESHOLD = config?.freeShippingThreshold !== undefined ? config.freeShippingThreshold : 200000;
+    const FREE_SHIPPING_THRESHOLD = config?.freeShippingThreshold !== undefined ? Number(config.freeShippingThreshold) : 200000;
     const missingForFreeShipping = Math.max(0, FREE_SHIPPING_THRESHOLD - subtotal);
     const progressPercentage = Math.min(100, (subtotal / FREE_SHIPPING_THRESHOLD) * 100);
     
@@ -2384,9 +2394,9 @@ const InvoiceModal: React.FC<{
     const [paymentMethod, setPaymentMethod] = useState('Nequi');
 
     const paymentOptions = ['Nequi', 'Daviplata', 'Tarjeta', 'Addi', 'Sistecredito'];
-    const FREE_SHIPPING_THRESHOLD = config?.freeShippingThreshold !== undefined ? config.freeShippingThreshold : 200000;
-    const SHIPPING_COST_BOGOTA = config?.shippingCostBogota !== undefined ? config.shippingCostBogota : (config?.shippingCostAmount !== undefined ? config.shippingCostAmount : 10000);
-    const SHIPPING_COST_NATIONAL = config?.shippingCostNational !== undefined ? config.shippingCostNational : 15000;
+    const FREE_SHIPPING_THRESHOLD = config?.freeShippingThreshold !== undefined ? Number(config.freeShippingThreshold) : 200000;
+    const SHIPPING_COST_BOGOTA = config?.shippingCostBogota !== undefined ? Number(config.shippingCostBogota) : (config?.shippingCostAmount !== undefined ? Number(config.shippingCostAmount) : 10000);
+    const SHIPPING_COST_NATIONAL = config?.shippingCostNational !== undefined ? Number(config.shippingCostNational) : 15000;
     
     const baseShippingCost = shippingDestination === 'Bogotá' ? SHIPPING_COST_BOGOTA : SHIPPING_COST_NATIONAL;
     const shippingCost = deliveryMethod === 'Envío a Domicilio' && subtotal < FREE_SHIPPING_THRESHOLD ? baseShippingCost : 0;
@@ -3851,12 +3861,12 @@ const ProductEditor: React.FC<{
     };
 
     const handleGenerateAIDescription = async () => {
-        if (!edited.name || !edited.imageUrl) {
-            alert("Necesitas un nombre y una imagen para generar la descripción.");
+        if (!edited.name) {
+            alert("Necesitas un nombre para generar la descripción.");
             return;
         }
         setIsGeneratingAI(true);
-        const result = await generateProductDescription(edited.name, edited.imageUrl);
+        const result = await generateProductDescription(edited.name, edited.imageUrl || undefined);
         if (typeof result === 'object') {
             setEdited(p => ({ ...p, name: result.name, description: result.description }));
         } else if (typeof result === 'string' && !result.startsWith('Error')) {
