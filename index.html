@@ -10,6 +10,21 @@
     <meta name="theme-color" content="#ec4899">
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Bombon - Tienda de Ropa</title>
+    <meta name="description" content="Encuentra las últimas tendencias en ropa y moda en Bombón. Variedad de prendas, envíos rápidos y la mejor calidad." />
+    
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://tiendabombon.netlify.app/" />
+    <meta property="og:title" content="Bombon - Tienda de Ropa" />
+    <meta property="og:description" content="Explora nuestra colección exclusiva de moda." />
+    <meta property="og:image" content="https://i.ibb.co/3Y7f0fM/bombon-logo.png" />
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image" />
+    <meta property="twitter:url" content="https://tiendabombon.netlify.app/" />
+    <meta property="twitter:title" content="Bombon - Tienda de Ropa" />
+    <meta property="twitter:description" content="Explora nuestra colección exclusiva de moda." />
+    <meta property="twitter:image" content="https://i.ibb.co/3Y7f0fM/bombon-logo.png" />
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -66,17 +81,9 @@
         border: 1px solid var(--primary);
         box-shadow: 0 0 10px rgba(0, 243, 255, 0.3);
       }
-      
-      [data-theme='men'] .cyber-text {
-        /* Glow removed */
-      }
 
       [data-theme='men'] .cyber-gradient-bg {
         background: var(--primary-gradient) !important;
-      }
-      
-      [data-theme='men'] .cyber-gradient-text {
-        /* Gradient text removed */
       }
 
       /* Hide scrollbar for Chrome, Safari and Opera */
@@ -89,23 +96,6 @@
         scrollbar-width: none;  /* Firefox */
       }
     </style>
-<script type="importmap">
-{
-  "imports": {
-    "react": "https://esm.sh/react@^19.1.0",
-    "react-dom/": "https://esm.sh/react-dom@^19.1.0/",
-    "react/": "https://esm.sh/react@^19.1.0/",
-    "@google/genai": "https://esm.sh/@google/genai@^1.9.0",
-    "firebase/app": "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js",
-    "firebase/firestore": "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js",
-    "firebase/storage": "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js",
-    "firebase/auth": "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js",
-    "vite": "https://esm.sh/vite@^7.0.4",
-    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^4.6.0",
-    "firebase/": "https://aistudiocdn.com/firebase@^12.5.0/"
-  }
-}
-</script>
 </head>
 <body class="bg-background font-sans text-on-surface">
     <div id="root"></div>

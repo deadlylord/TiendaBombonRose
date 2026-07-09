@@ -369,18 +369,18 @@ const App: React.FC = () => {
     }, [isMenTheme]);
 
     // --- ROUTING LOGIC ---
-    const [currentPath, setCurrentPath] = useState(window.location.hash);
+    const [currentPath, setCurrentPath] = useState(window.location.pathname);
 
     useEffect(() => {
-        const onHashChange = () => setCurrentPath(window.location.hash);
-        window.addEventListener('hashchange', onHashChange);
+        const onPopState = () => setCurrentPath(window.location.pathname);
+        window.addEventListener('popstate', onPopState);
         // Trigger initial route check
-        onHashChange();
-        return () => window.removeEventListener('hashchange', onHashChange);
+        onPopState();
+        return () => window.removeEventListener('popstate', onPopState);
     }, []);
 
     useEffect(() => {
-        const route = currentPath.replace(/^#/, '');
+        const route = currentPath;
 
         const productMatch = route.match(/^\/product\/([^/]+)/);
         const isAdminRoute = route === '/admin';
@@ -401,7 +401,7 @@ const App: React.FC = () => {
             if (product) {
                 setSelectedProduct(product);
             } else if (!areProductsLoading) {
-                window.location.hash = '/'; // Product not found
+                navigate('/'); // Product not found
             }
         } else {
             setSelectedProduct(null);
@@ -423,7 +423,8 @@ const App: React.FC = () => {
     }, [currentPath, products, areProductsLoading]);
 
     const navigate = (path: string) => {
-        window.location.hash = path;
+        window.history.pushState(null, '', path);
+        setCurrentPath(path);
     };
 
     const closeModal = () => {
