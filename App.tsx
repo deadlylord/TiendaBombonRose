@@ -1770,8 +1770,8 @@ const CategoryNav: React.FC<{
 }> = ({ categories, selectedCategory, onSelectCategory, isMenTheme, hasAnnouncements }) => {
     return (
         <nav className={`bg-surface border-b border-gray-200 sticky ${hasAnnouncements ? 'top-[112px]' : 'top-20'} z-40 transition-all`}>
-            <div className="max-w-7xl 2xl:max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
-                <div className="flex items-center space-x-2 overflow-x-auto scrollbar-hide py-3 md:justify-center">
+            <div className="max-w-7xl 2xl:max-w-screen-2xl mx-auto overflow-x-auto scrollbar-hide px-4 sm:px-6 lg:px-8">
+                <div className="flex items-center space-x-2 py-3 min-w-full w-max justify-start md:justify-center">
                     <button
                         onClick={() => onSelectCategory('All')}
                         className={`px-4 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap transition-colors duration-200 ${selectedCategory === 'All' ? (isMenTheme ? 'cyber-gradient-bg text-white' : 'bg-primary text-white') : 'bg-surface border border-gray-200 text-on-surface hover:bg-primary/20'}`}
