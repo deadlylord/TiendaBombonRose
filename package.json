@@ -1,13 +1,14 @@
 {
   "name": "bombon-tienda",
   "private": true,
-  "version": "0.2.6",
+  "version": "0.3.0",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build",
     "start": "node server.ts",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts"
   },
   "dependencies": {
     "@google/genai": "^1.44.0",

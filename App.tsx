@@ -4,10 +4,13 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { motion, AnimatePresence } from "motion/react";
 import { Product, Category, Banner, StoreConfig, CartItem, Order, ToastMessage, ProductVariantDetail, ProductColorVariantDetail, ProductVariants, User, StoreBranch } from './types';
 import { db, storage, auth } from './services/firebase';
-import { posDb } from './services/posFirebase';
-import { doc, getDoc, onSnapshot, setDoc, collection, addDoc, updateDoc, deleteDoc, runTransaction } from 'firebase/firestore';
+import { usePosCatalog } from './services/usePosCatalog';
+import { useCatalogExtensions } from './services/useCatalogExtensions';
+import { buildCatalog, catalogCompany, DEFAULT_COMPANY_ID, validateCart } from './services/catalog';
+import { initializeApp, deleteApp } from 'firebase/app';
+import { doc, getDoc, onSnapshot, setDoc, collection, addDoc, updateDoc, deleteDoc, runTransaction, query, where, QueryConstraint } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, User as FirebaseUser } from 'firebase/auth';
+import { onAuthStateChanged, getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, User as FirebaseUser } from 'firebase/auth';
 
 import {
   CartIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, InstagramIcon, MenuIcon,
@@ -17,15 +20,15 @@ import {
 
 // --- MOCK DATA (Initial values for Firestore) ---
 const initialConfig: StoreConfig = {
+    inventoryCompanyId: DEFAULT_COMPANY_ID,
     logoUrl: 'https://i.ibb.co/3Y7f0fM/bombon-logo.png',
     secondLogoUrl: 'https://i.ibb.co/9GZ9m3z/street-legends-logo.png',
     contact: { name: 'Bombon Store', phone: '573001234567', schedule: 'Lunes a Sábado, 9am - 7pm' },
-    social: { instagram: 'https://instagram.com', tiktok: 'https://tiktok.com', whatsapp: '573001234567' },
+    social: { instagram: 'https://instagram.com/bombonrosecol', tiktok: 'https://tiktok.com/@bombonrosecol', whatsapp: '573001234567' },
     paymentMethodsImageUrl: 'https://i.ibb.co/QPDWf6s/medios-de-pago.png',
     announcements: [
         '✨ ¡Envío GRATIS por compras superiores a $200.000! 🇨🇴',
-        '⚡ Nueva Colección Street Legends disponible ya',
-        '💖 10% de descuento en tu primera compra con el código NUEVO10'
+        '⚡ Nueva Colección Street Legends disponible ya'
     ],
     showAnnouncements: true,
     shippingCostAmount: 10000,
@@ -40,7 +43,6 @@ const initialBanners: Banner[] = [
     { id: 3, imageUrl: 'https://i.ibb.co/P9M5dcD/banner3.jpg', title: 'Pantalones con Estilo', subtitle: 'Comodidad y elegancia en cada paso.', link: 'category:Pantalones' }
 ];
 
-const initialCategories: Category[] = ['Blusas', 'Vestidos', 'Pantalones', 'Accesorios', 'Chaquetas', 'Bolsos'];
 
 const colorMap: Record<string, string> = {
     'rojo': '#ef4444',
@@ -127,42 +129,22 @@ const safeJsonStringify = (val: any): string => {
 };
 
 const useBrowserStorage = <T,>(key: string, initialValue: T): [T, React.Dispatch<React.SetStateAction<T>>] => {
-  const [storedValue, setStoredValue] = useState<T>(() => {
-    try {
-      const item = window.localStorage.getItem(key);
-      return item ? JSON.parse(item) : initialValue;
-    } catch (error) {
-      console.error(`Error reading from localStorage for key "${key}":`, error);
-      return initialValue;
-    }
-  });
-
-  const setValue: React.Dispatch<React.SetStateAction<T>> = (value) => {
-    try {
-      const valueToStore = value instanceof Function ? value(storedValue) : value;
-      setStoredValue(valueToStore);
-      
-      try {
-        window.localStorage.setItem(key, safeJsonStringify(valueToStore));
-      } catch (error) {
-        if (error instanceof DOMException && (error.name === 'QuotaExceededError' || error.code === 22)) {
-          console.warn(
-            `LocalStorage quota exceeded when trying to save key "${key}". ` +
-            `The latest changes will not be persisted across sessions.`
-          );
-        } else {
-          console.error(`Error writing to localStorage for key "${key}":`, error);
-        }
-      }
-    } catch (error) {
-      console.error(`Error in useBrowserStorage setValue for key "${key}":`, error);
-    }
+  const read = () => {
+    try { const item = window.localStorage.getItem(key); return item ? JSON.parse(item) as T : initialValue; }
+    catch { return initialValue; }
   };
-
-  return [storedValue, setValue];
+  const [state, setState] = useState(() => ({ key, value: read() }));
+  const value = state.key === key ? state.value : read();
+  const setValue: React.Dispatch<React.SetStateAction<T>> = update => {
+    const next = typeof update === 'function' ? (update as (previous: T) => T)(value) : update;
+    setState({ key, value: next });
+    try { window.localStorage.setItem(key, safeJsonStringify(next)); }
+    catch (error) { console.error('Could not persist cart:', error); }
+  };
+  return [value, setValue];
 };
 
-const useFirestoreDocSync = <T extends object>(collectionName: string, docId: string, initialValue: T): [T, (value: T) => void, boolean] => {
+const useFirestoreDocSync = <T extends object>(collectionName: string, docId: string, initialValue: T): [T, (value: T) => Promise<void>, boolean] => {
     const [data, setData] = useState<T>(initialValue);
     const [isLoading, setIsLoading] = useState(true);
     const docRef = useMemo(() => doc(db, collectionName, docId), [collectionName, docId]);
@@ -173,7 +155,7 @@ const useFirestoreDocSync = <T extends object>(collectionName: string, docId: st
                 if (docSnap.exists()) {
                     setData({ ...initialValue, ...docSnap.data() } as T);
                 } else {
-                    setDoc(docRef, initialValue).catch(error => console.error(`Firestore initial setDoc error for ${collectionName}/${docId}:`, error));
+                    setData(initialValue);
                 }
                 setIsLoading(false);
             },
@@ -191,33 +173,29 @@ const useFirestoreDocSync = <T extends object>(collectionName: string, docId: st
             await setDoc(docRef, value, { merge: true });
         } catch (error) {
             console.error(`Firestore setDoc error for ${collectionName}/${docId}:`, error);
+            throw error;
         }
     }, [docRef, collectionName, docId]);
 
     return [data, setValue, isLoading];
 };
 
-const useFirestoreCollectionSync = <T extends {docId: string}>(collectionName: string, dbInstance = db): [T[], boolean] => {
-    const [data, setData] = useState<T[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const collectionRef = useMemo(() => collection(dbInstance, collectionName), [collectionName, dbInstance]);
-
+const useFirestoreCollectionSync = <T extends {docId: string}>(collectionName: string, enabled = true, scope = '', constraints: QueryConstraint[] = []): [T[], boolean] => {
+    const [state, setState] = useState<{ key: string; data: T[]; loading: boolean }>({ key: '', data: [], loading: true });
+    const key = JSON.stringify([collectionName, scope, enabled]);
     useEffect(() => {
-        const unsubscribe = onSnapshot(collectionRef,
-            (querySnapshot) => {
-                const items = querySnapshot.docs.map(doc => ({ ...doc.data(), docId: doc.id } as T));
-                setData(items);
-                setIsLoading(false);
-            },
-            (error) => {
-                console.error(`Firestore onSnapshot error for collection ${collectionName}:`, error);
-                setIsLoading(false);
-            }
-        );
-        return () => unsubscribe();
-    }, [collectionRef]);
-
-    return [data, isLoading];
+        if (!enabled) return;
+        let active = true;
+        setState({ key, data: [], loading: true });
+        const unsubscribe = onSnapshot(query(collection(db, collectionName), ...constraints), snapshot => {
+            if (active) setState({ key, data: snapshot.docs.map(d => ({ ...d.data(), docId: d.id } as T)), loading: false });
+        }, error => {
+            console.error(`Firestore error for ${collectionName}:`, error);
+            if (active) setState({ key, data: [], loading: false });
+        });
+        return () => { active = false; unsubscribe(); };
+    }, [key]);
+    return [enabled && state.key === key ? state.data : [], enabled && (state.key !== key || state.loading)];
 };
 
 const uploadImageToStorage = async (file: File): Promise<string> => {
@@ -229,117 +207,37 @@ const uploadImageToStorage = async (file: File): Promise<string> => {
 };
 
 const App: React.FC = () => {
-    // Global State
-    const [config, setConfig, isConfigLoading] = useFirestoreDocSync<StoreConfig>('store', 'config', initialConfig);
-    const [{ list: banners }, setBannersDoc, areBannersLoading] = useFirestoreDocSync<{list: Banner[]}>('store', 'banners', { list: initialBanners });
-    const [{ list: menBanners }, setMenBannersDoc] = useFirestoreDocSync<{list: Banner[]}>('store', 'menBanners', { list: initialBanners });
-    const [posInventory, arePosProductsLoading] = useFirestoreCollectionSync<any>('inventory', posDb);
-    const [posCategories, arePosCategoriesLoading] = useFirestoreCollectionSync<any>('categories', posDb);
-    const [productExtensions, areExtensionsLoading] = useFirestoreCollectionSync<any>('product_extensions', db);
-    const [{ list: localCategories }, setCategoriesDoc, areLocalCategoriesLoading] = useFirestoreDocSync<{list: Category[]}>('store', 'categories', { list: initialCategories });
-    const [orders, areOrdersLoading] = useFirestoreCollectionSync<Order>('orders');
-    const [branches, _areBranchesLoading] = useFirestoreCollectionSync<StoreBranch>('branches');
-    const [users, areUsersLoading] = useFirestoreCollectionSync<User>('users');
-    const [cart, setCart] = useBrowserStorage<CartItem[]>('storeCart', []);
-
-    // Merge categories
-    const categories = useMemo(() => {
-        const posCatNames = posCategories.map(c => c.name).filter(Boolean);
-        const combined = Array.from(new Set([...posCatNames, ...localCategories]));
-        return combined;
-    }, [posCategories, localCategories]);
-
-    // Merge POS products with local extensions
-    const products = useMemo(() => {
-        if (!posInventory) return [];
-        
-        const getCreatedAtVal = (it: any) => {
-            if (!it || !it.createdAt) return 0;
-            if (typeof it.createdAt === 'number') return it.createdAt;
-            if (it.createdAt.toMillis) return it.createdAt.toMillis();
-            if (it.createdAt.seconds) return it.createdAt.seconds * 1000;
-            return new Date(it.createdAt).getTime() || 0;
-        };
-
-        // Consolidate stock by name/sku (assuming name is unique enough or there's a better key)
-        const consolidated = posInventory.reduce((acc: any, item: any) => {
-            const key = item.name || item.docId;
-            const itemCreatedAt = getCreatedAtVal(item);
-            
-            if (!acc[key]) {
-                acc[key] = { ...item, stock: 0, _createdAtMs: itemCreatedAt };
-            } else {
-                const currentCreatedAt = acc[key]._createdAtMs || 0;
-                if (itemCreatedAt > currentCreatedAt) {
-                    const currentStock = acc[key].stock;
-                    acc[key] = { ...item, stock: currentStock, _createdAtMs: itemCreatedAt };
-                }
-            }
-            acc[key].stock += (item.stock || 0);
-            // Keep the first valid imageUrl/description etc
-            if (!acc[key].imageUrl && item.imageUrl) acc[key].imageUrl = item.imageUrl;
-            return acc;
-        }, {});
-
-        return Object.values(consolidated)
-            .filter((item: any) => (item.stock || 0) > 0 && !item.isDisabled)
-            .map((item: any) => {
-                const extension = productExtensions.find(ext => ext.docId === item.docId);
-                const categoryObj = posCategories.find(c => c.docId === item.categoryId);
-                
-                // Remove the last word from the product name (provider info)
-                const rawName = item.name || 'Producto sin nombre';
-                const words = rawName.trim().split(/\s+/);
-                const cleanedName = words.length > 1 ? words.slice(0, -1).join(' ') : rawName;
-
-                const getCreatedAt = (it: any) => {
-                    if (!it.createdAt) return 0;
-                    if (typeof it.createdAt === 'number') return it.createdAt;
-                    if (it.createdAt.toMillis) return it.createdAt.toMillis();
-                    if (it.createdAt.seconds) return it.createdAt.seconds * 1000;
-                    return new Date(it.createdAt).getTime() || 0;
-                };
-
-                return {
-                    id: item.docId,
-                    name: extension?.nameOverride ?? cleanedName,
-                    description: extension?.descriptionOverride ?? (item.description || ''),
-                    price: extension?.priceOverride ?? (item.price || 0),
-                    category: categoryObj?.name || item.categoryName || item.categoryId || 'General',
-                    imageUrl: extension?.imageUrlOverride ?? (item.imageUrl || 'https://picsum.photos/seed/product/400/500'),
-                    available: (item.stock || 0) > 0,
-                    stock: item.stock || 0,
-                    provider: item.provider || '',
-                    rawName: rawName,
-                    discountPercentage: extension?.discountPercentage ?? 0,
-                    variants: extension?.variants || {
-                        hasSizes: false, sizes: {},
-                        hasColors: false, colors: {}
-                    },
-                    madeInColombia: extension?.madeInColombia ?? true, // Default to true as requested
-                    isFeatured: extension?.isFeatured ?? false,
-                    isNewArrival: extension?.isNewArrival ?? false,
-                    createdAt: getCreatedAt(item),
-                    updatedAt: extension?.updatedAt || 0
-                } as Product;
-            })
-            .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-    }, [posInventory, productExtensions, posCategories]);
-    
-    const areProductsLoading = arePosProductsLoading || areExtensionsLoading || arePosCategoriesLoading;
-    const areCategoriesLoading = arePosCategoriesLoading || areLocalCategoriesLoading;
-    
-    // Auth State
+    // Authentication gates every private collection subscription.
+    const [isAdminOpen, setAdminOpen] = useState(false);
     const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
     const [userData, setUserData] = useState<User | null>(null);
     const [isAuthLoading, setAuthLoading] = useState(true);
-    
+    const [config, setConfig, isConfigLoading] = useFirestoreDocSync<StoreConfig>('store', 'config', initialConfig);
+    const companyId = catalogCompany(config);
+    const privateEnabled = isAdminOpen && !!currentUser && !!userData;
+    const [{ list: banners }, setBannersDoc, areBannersLoading] = useFirestoreDocSync<{list: Banner[]}>('store', 'banners', { list: initialBanners });
+    const [{ list: menBanners }, setMenBannersDoc] = useFirestoreDocSync<{list: Banner[]}>('store', 'menBanners', { list: initialBanners });
+    const { inventory: posInventory, categories: posCategories, loading: areProductsLoading, error: posCatalogError } = usePosCatalog(companyId, !isConfigLoading);
+    const companyConstraints = companyId === DEFAULT_COMPANY_ID ? [] : [where('companyId', '==', companyId)];
+    const { rows: productExtensions, loading: areExtensionsLoading, error: extensionsError } = useCatalogExtensions(posInventory, companyId);
+    const catalogError = posCatalogError || extensionsError;
+    const setCategoriesDoc = (value: { list: Category[] }) => setDoc(doc(db, 'store', 'categories'), value, { merge: true });
+    const [allOrders, areOrdersLoading] = useFirestoreCollectionSync<Order>('orders', privateEnabled, companyId, companyConstraints);
+    const orders = allOrders.filter(order => (order.companyId || DEFAULT_COMPANY_ID) === companyId);
+    const [branches, _areBranchesLoading] = useFirestoreCollectionSync<StoreBranch>('branches');
+    const [users, areUsersLoading] = useFirestoreCollectionSync<User>('users', privateEnabled && userData?.role === 'admin', currentUser?.uid);
+    const [cart, setCart] = useBrowserStorage<CartItem[]>(`storeCart:${companyId}`, []);
+    const products = useMemo(() => buildCatalog(posInventory, posCategories, productExtensions, companyId), [posInventory, posCategories, productExtensions, companyId]);
+    // Only show populated categories; local aliases must not add empty categories.
+    const categories = useMemo(() => [...new Set(products.map(product => product.category))].sort((a, b) => a.localeCompare(b, 'es')), [products]);
     // UI State
     const [isMobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [isCartOpen, setCartOpen] = useState(false);
-    const [isAdminOpen, setAdminOpen] = useState(false);
     const [isSearching, setIsSearching] = useState(false);
     const [isInvoiceModalOpen, setInvoiceModalOpen] = useState(false);
+    const [isOrdering, setOrdering] = useState(false);
+    const orderingLock = useRef(false);
+    const pendingOrderRef = useRef<ReturnType<typeof doc> | null>(null);
     const [isAddUserModalOpen, setAddUserModalOpen] = useState(false);
     const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
     const [productToEdit, setProductToEdit] = useState<Product | null>(null);
@@ -356,7 +254,19 @@ const App: React.FC = () => {
     // Admin State
     const [editMode, setEditMode] = useState(false);
     
-    const isAppLoading = isConfigLoading || areBannersLoading || areProductsLoading || areCategoriesLoading || areOrdersLoading || isAuthLoading || areUsersLoading;
+    const isAppLoading = isConfigLoading || areBannersLoading || areProductsLoading || areExtensionsLoading;
+    const previousCompany = useRef(companyId);
+    useEffect(() => {
+        if (previousCompany.current !== companyId) {
+            previousCompany.current = companyId;
+            setSelectedProduct(null);
+            setProductToEdit(null);
+            setInvoiceModalOpen(false);
+            setSelectedCategory('All');
+            setSearchTerm('');
+            pendingOrderRef.current = null;
+        }
+    }, [companyId]);
 
     // Theme Effect
     useEffect(() => {
@@ -447,6 +357,8 @@ const App: React.FC = () => {
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
             setCurrentUser(user);
+            setUserData(null);
+            try {
             if (user) {
                 const userDocRef = doc(db, 'users', user.uid);
                 const userDocSnap = await getDoc(userDocRef);
@@ -459,7 +371,10 @@ const App: React.FC = () => {
             } else {
                 setUserData(null);
             }
-            setAuthLoading(false);
+            } catch (error) {
+                console.error('Error loading user permissions:', error);
+                setUserData(null);
+            } finally { setAuthLoading(false); }
         });
         return () => unsubscribe();
     }, []);
@@ -569,6 +484,7 @@ const App: React.FC = () => {
                     const updatedProduct = { ...product, description: result.description, name: result.name };
                     // We call handleUpdateProduct directly to persist each one
                     const extension = {
+          companyId,
                         nameOverride: updatedProduct.name,
                         descriptionOverride: updatedProduct.description,
                         imageUrlOverride: updatedProduct.imageUrl,
@@ -613,7 +529,7 @@ const App: React.FC = () => {
     const handleAddToCart = (product: Product, quantity: number, size?: string, color?: string) => {
         const cartItemId = `${product.id}${size ? `-${size}` : ''}${color ? `-${color}` : ''}`;
         const existingItem = cart.find(item => item.id === cartItemId);
-        const currentQuantity = existingItem ? existingItem.quantity : 0;
+        const currentQuantity = cart.filter(item => item.productId === product.id).reduce((sum, item) => sum + item.quantity, 0);
         
         if (product.stock !== undefined && (currentQuantity + quantity) > product.stock) {
             showToast(`No hay suficiente stock disponible. (Máx: ${product.stock})`, "error");
@@ -669,28 +585,7 @@ const App: React.FC = () => {
         setProductDetailFromCart(true);
         handleOpenProductDetails(product);
       } else {
-        const cartItemId = `${product.id}`;
-        const existingItem = cart.find(item => item.id === cartItemId);
-
-        const hasDiscount = product.discountPercentage != null && product.discountPercentage > 0;
-        const finalPrice = hasDiscount
-            ? product.price * (1 - (product.discountPercentage || 0) / 100)
-            : product.price;
-        
-        if (existingItem) {
-            setCart(cart.map(item => item.id === cartItemId ? { ...item, quantity: item.quantity + 1 } : item));
-        } else {
-            const newItem: CartItem = {
-                id: cartItemId,
-                productId: product.id,
-                name: product.name,
-                price: finalPrice,
-                quantity: 1,
-                imageUrl: product.imageUrl,
-            };
-            setCart([...cart, newItem]);
-        }
-        showToast(`${product.name} agregado al carrito!`);
+        handleAddToCart(product, 1);
       }
     };
     
@@ -704,7 +599,9 @@ const App: React.FC = () => {
             handleRemoveFromCart(cartItemId);
             return;
         }
-        setCart(cart.map(item => item.id === cartItemId ? { ...item, quantity: newQuantity } : item));
+        const updated = cart.map(item => item.id === cartItemId ? { ...item, quantity: newQuantity } : item);
+        try { validateCart(updated, products); setCart(updated); }
+        catch (error) { showToast(error instanceof Error ? error.message : 'Revisa el carrito.', 'error'); }
     };
 
     const handleClearCart = () => {
@@ -784,11 +681,15 @@ const App: React.FC = () => {
     // --- ADMIN CRUD HANDLERS ---
     const handleUpdateConfig = async (newConfig: StoreConfig) => { 
         try {
-            await setConfig(newConfig); 
+            if (userData?.role !== 'admin') throw new Error('Solo un administrador puede cambiar la configuración.');
+            const inventoryCompanyId = catalogCompany(newConfig);
+            if (!/^[A-Za-z0-9_-]{1,128}$/.test(inventoryCompanyId)) throw new Error('El identificador de empresa no es válido.');
+            await setConfig({ ...newConfig, inventoryCompanyId });
             showToast("¡Configuración guardada con éxito!"); 
         } catch (error) {
             console.error("Error updating config:", error);
-            showToast("Error al guardar la configuración.");
+            showToast(error instanceof Error ? error.message : 'Error al guardar la configuración.', 'error');
+            throw error;
         }
     };
     const handleSaveBanners = (newBanners: Banner[]) => { setBannersDoc({ list: newBanners }); showToast("Banners principales guardados."); };
@@ -799,6 +700,7 @@ const App: React.FC = () => {
       // In this setup, we don't add products to POS from here usually, 
       // but if we do, we save the extension part locally.
       const extension = {
+          companyId,
           nameOverride: newProduct.name,
           imageUrlOverride: newProduct.imageUrl,
           priceOverride: newProduct.price,
@@ -814,6 +716,7 @@ const App: React.FC = () => {
 
     const handleUpdateProduct = (updatedProduct: Product) => {
       const extension = {
+          companyId,
           nameOverride: updatedProduct.name,
           descriptionOverride: updatedProduct.description,
           imageUrlOverride: updatedProduct.imageUrl,
@@ -837,42 +740,53 @@ const App: React.FC = () => {
     };
     
     const handleNewOrder = async (orderData: Omit<Order, 'docId' | 'orderNumber' | 'status' | 'date'>) => {
-        const orderCounterRef = doc(db, 'store', 'orderCounter');
-
+        if (orderingLock.current) return;
+        orderingLock.current = true;
+        setOrdering(true);
+        // Open during the click so mobile browsers don't block WhatsApp after saving.
+        const popup = window.open('about:blank', '_blank');
+        if (popup) popup.opener = null;
         try {
-            const newOrderNumber = await runTransaction(db, async (transaction) => {
-                const counterDoc = await transaction.get(orderCounterRef);
-                let nextNumber = 1001;
-                if (counterDoc.exists()) {
-                    nextNumber = (counterDoc.data()?.currentNumber || 1000) + 1;
-                }
+            if (catalogError || areProductsLoading) throw new Error('Espera a que se actualice el catálogo.');
+            const items = validateCart(orderData.items, products);
+            const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+            if (Math.abs(subtotal - orderData.subtotal) > 0.01) throw new Error('Cambió el precio de una prenda. Vuelve al carrito y agrégala nuevamente para revisar el total.');
+            if (!/^[0-9]{10,15}$/.test(orderData.customerPhone.replace(/\D/g, ''))) throw new Error('Revisa tu número de WhatsApp.');
+            if (!/^[0-9]{10,15}$/.test(config.social.whatsapp) || config.social.whatsapp === '573001234567') throw new Error('La tienda debe configurar su número real de WhatsApp antes de recibir pedidos.');
+            if (orderData.deliveryMethod === 'Recoger en Tienda' && !branches.some(branch => branch.docId === orderData.pickupBranchId)) throw new Error('Selecciona la sede donde recogerás el pedido.');
+            const orderRef = pendingOrderRef.current || doc(collection(db, 'orders'));
+            pendingOrderRef.current = orderRef;
+            const orderCounterRef = doc(db, 'store', 'orderCounter');
+            const newOrder = await runTransaction(db, async transaction => {
+                const existingOrder = await transaction.get(orderRef);
+                if (existingOrder.exists()) return existingOrder.data() as Omit<Order, 'docId'>;
+                const counter = await transaction.get(orderCounterRef);
+                const nextNumber = (counter.data()?.currentNumber || 1000) + 1;
+                const order: Omit<Order, 'docId'> = {
+                    ...orderData, items, subtotal, total: subtotal + orderData.shippingCost,
+                    companyId, orderNumber: `BMB-${nextNumber}`, status: 'Pendiente', date: new Date().toISOString(),
+                };
                 transaction.set(orderCounterRef, { currentNumber: nextNumber }, { merge: true });
-                return nextNumber;
+                transaction.set(orderRef, order);
+                return order;
             });
-
-            const orderNumber = `BMB-${newOrderNumber}`;
-
-            const newOrder: Omit<Order, 'docId'> = {
-                ...orderData,
-                orderNumber,
-                status: 'Pendiente',
-                date: new Date().toISOString(),
-            };
-            
             const messageItems = newOrder.items.map(item => `- ${item.quantity}x ${item.name} ${item.size ? `(Talla: ${item.size})` : ''} ${item.color ? `(Color: ${item.color})` : ''} - ${formatCurrency(item.price * item.quantity)}`).join('\n');
-            const message = `¡Hola ${config.contact.name}! 👋 Quiero hacer un pedido:\n\n*Número de Orden:* ${orderNumber}\n\n*Productos:*\n${messageItems}\n\n*Subtotal:* ${formatCurrency(newOrder.subtotal)}\n*Envío:* ${formatCurrency(newOrder.shippingCost)}\n*TOTAL:* ${formatCurrency(newOrder.total)}\n\n*Datos del Cliente:*\n- Nombre: ${newOrder.customerName}\n- Teléfono: ${newOrder.customerPhone}\n\n*Entrega:* ${newOrder.deliveryMethod}\n${newOrder.deliveryMethod === 'Envío a Domicilio' && newOrder.address ? `- Dirección: ${newOrder.address}\n` : ''}*Medio de Pago:* ${newOrder.paymentMethod}\n\n¡Gracias! 😊`;
-            
-            window.open(`https://wa.me/${config.social.whatsapp}?text=${encodeURIComponent(message)}`, '_blank');
-            
-            await addDoc(collection(db, 'orders'), newOrder);
-
+            const message = `¡Hola ${config.contact.name}! 👋 Quiero hacer un pedido:\n\n*Número de Orden:* ${newOrder.orderNumber}\n\n*Productos:*\n${messageItems}\n\n*Subtotal:* ${formatCurrency(newOrder.subtotal)}\n*Envío:* ${formatCurrency(newOrder.shippingCost)}\n*TOTAL:* ${formatCurrency(newOrder.total)}\n\n*Datos del Cliente:*\n- Nombre: ${newOrder.customerName}\n- Teléfono: ${newOrder.customerPhone}\n\n*Entrega:* ${newOrder.deliveryMethod}\n${newOrder.pickupBranchName ? `- Sede: ${newOrder.pickupBranchName}\n` : ''}${newOrder.address ? `- Dirección: ${newOrder.address}\n` : ''}*Medio de Pago:* ${newOrder.paymentMethod}\n\n¡Gracias! 😊`;
+            const whatsappUrl = `https://wa.me/${config.social.whatsapp}?text=${encodeURIComponent(message)}`;
+            // The order and its number are saved atomically before handing off to WhatsApp.
             setCart([]);
+            pendingOrderRef.current = null;
             navigate('/');
-            showToast("¡Pedido enviado por WhatsApp!");
-
+            showToast('Pedido guardado. Confirma el mensaje en WhatsApp.');
+            if (popup && !popup.closed) popup.location.href = whatsappUrl;
+            else window.location.assign(whatsappUrl);
         } catch (error) {
-            console.error("Error creating order with transaction:", error);
-            showToast("Error al procesar el pedido. Inténtalo de nuevo.", "error");
+            popup?.close();
+            console.error('Error creating order:', error);
+            showToast(error instanceof Error ? error.message : 'No se pudo guardar el pedido. Tu carrito se conserva.', 'error');
+        } finally {
+            orderingLock.current = false;
+            setOrdering(false);
         }
     };
 
@@ -899,8 +813,11 @@ const App: React.FC = () => {
     };
 
     const handleCreateUser = async (email: string, password: string, role: User['role']) => {
+        if (userData?.role !== 'admin') { showToast('Solo un administrador puede crear usuarios.', 'error'); return; }
+        const creationApp = initializeApp(auth.app.options, `user-creation-${Date.now()}`);
+        const creationAuth = getAuth(creationApp);
         try {
-            const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+            const userCredential = await createUserWithEmailAndPassword(creationAuth, email, password);
             const user = userCredential.user;
             if (!user) throw new Error("User creation failed.");
             await setDoc(doc(db, "users", user.uid), {
@@ -922,10 +839,14 @@ const App: React.FC = () => {
             }
             showToast(errorMessage, "error");
             throw error; // Rethrow to allow modal to handle loading state
+        } finally {
+            await signOut(creationAuth);
+            await deleteApp(creationApp);
         }
     };
 
     const handleUpdateUserRole = async (userDocId: string, newRole: User['role']) => {
+        if (userData?.role !== 'admin') return;
         try {
             await updateDoc(doc(db, 'users', userDocId), { role: newRole });
             showToast("Rol de usuario actualizado.");
@@ -936,6 +857,7 @@ const App: React.FC = () => {
     };
     
     const handleDeleteUser = async (userDocId: string) => {
+        if (userData?.role !== 'admin') return;
         if (window.confirm("¿Seguro que quieres eliminar a este usuario? Perderá el acceso al panel. Esta acción no se puede deshacer.")) {
             try {
                 // This deletes the user's role document, effectively revoking access.
@@ -1087,6 +1009,7 @@ const App: React.FC = () => {
             return <LoginPage showToast={showToast} onClose={closeModal} />;
         }
         
+        if (areOrdersLoading || areUsersLoading) return <div className="fixed inset-0 z-[90] bg-white flex items-center justify-center">Cargando administración…</div>;
         return (
             <AdminPanel
                 user={userData}
@@ -1138,6 +1061,7 @@ const App: React.FC = () => {
             />
             
             <div className={`transition-all ${hasAnnouncements ? 'h-28' : 'h-20'}`} />
+            {catalogError && <div role="alert" className="mx-auto max-w-3xl my-6 p-4 bg-rose-50 text-rose-900 rounded-lg text-center">{catalogError}</div>}
             
             <CategoryNav
               categories={categories}
@@ -1318,8 +1242,8 @@ const App: React.FC = () => {
                 config={config}
             />}
             {renderAdminView()}
-            {selectedProduct && <ProductDetailModal product={selectedProduct} onClose={closeModal} onAddToCart={handleAddToCart} formatCurrency={formatCurrency} showToast={showToast} allProducts={products} config={config} />}
-            {isInvoiceModalOpen && <InvoiceModal onClose={() => navigate('/cart')} cart={cart} subtotal={cartSubtotal} onSubmitOrder={handleNewOrder} config={config} formatCurrency={formatCurrency} />}
+            {selectedProduct && selectedProduct.companyId === companyId && <ProductDetailModal product={selectedProduct} onClose={closeModal} onAddToCart={handleAddToCart} formatCurrency={formatCurrency} showToast={showToast} allProducts={products} config={config} />}
+            {isInvoiceModalOpen && <InvoiceModal onClose={() => navigate('/cart')} cart={cart} subtotal={cartSubtotal} onSubmitOrder={handleNewOrder} isSubmitting={isOrdering} branches={branches} config={config} formatCurrency={formatCurrency} />}
             {isAddUserModalOpen && <AddUserModal onClose={() => setAddUserModalOpen(false)} onCreateUser={handleCreateUser} />}
 
 
@@ -1543,32 +1467,6 @@ const LoginPage: React.FC<{
     } catch (authError: any) {
         console.error("Firebase Auth Error:", authError);
 
-        const isDemoUser = email === 'admin@bombon.com' || email === 'vendedor@bombon.com';
-        const isCorrectDemoPassword = password === 'bombon123';
-        
-        if (isDemoUser && isCorrectDemoPassword && (authError.code === 'auth/invalid-credential' || authError.code === 'auth/user-not-found')) {
-            try {
-                const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-                const user = userCredential.user;
-                if (!user) throw new Error("Demo user creation failed.");
-                const role = email === 'admin@bombon.com' ? 'admin' : 'vendedor';
-                
-                await setDoc(doc(db, "users", user.uid), {
-                    uid: user.uid,
-                    email: user.email,
-                    role: role
-                });
-                
-                showToast(`Cuenta de ${role} creada. ¡Bienvenido/a!`);
-                return;
-            } catch (creationError: any) {
-                console.error("Error creating demo user:", creationError);
-                setError('Error al configurar la cuenta de demostración.');
-                setIsLoading(false);
-                return;
-            }
-        }
-
         if (authError.code === 'auth/invalid-credential' || authError.code === 'auth/user-not-found' || authError.code === 'auth/wrong-password') {
              setError('El correo o la contraseña son incorrectos.');
         } else if (authError.code === 'auth/invalid-email') {
@@ -1678,7 +1576,8 @@ const Header: React.FC<{
 
                         <div className="flex-shrink-0">
                            <a href="#" onClick={handleLogoClick} aria-label="Volver al inicio">
-                                <img src={logoUrl} alt="Bombon Logo" className="h-14 w-auto cursor-pointer" />
+                                <img src={logoUrl} alt={isMenTheme ? "Street Legends" : "Bombón"} className="h-12 max-w-[150px] object-contain w-auto cursor-pointer mx-auto" />
+                                {!isMenTheme && <span className="block text-[10px] text-primary text-center">Ponte bonita para ti.</span>}
                             </a>
                         </div>
 
@@ -2384,15 +2283,17 @@ const ProductDetailModal: React.FC<{
 
 const InvoiceModal: React.FC<{
     onClose: () => void, cart: CartItem[], subtotal: number,
-    onSubmitOrder: (order: Omit<Order, 'docId' | 'orderNumber' | 'status' | 'date'>) => void, config: StoreConfig,
+    onSubmitOrder: (order: Omit<Order, 'docId' | 'orderNumber' | 'status' | 'date'>) => Promise<void>, config: StoreConfig,
+    isSubmitting: boolean, branches: StoreBranch[],
     formatCurrency: (amount: number) => string
-}> = ({ onClose, cart, subtotal, onSubmitOrder, config, formatCurrency }) => {
+}> = ({ onClose, cart, subtotal, onSubmitOrder, config, formatCurrency, isSubmitting, branches }) => {
     const [customerName, setCustomerName] = useState('');
     const [customerPhone, setCustomerPhone] = useState('');
     const [deliveryMethod, setDeliveryMethod] = useState<'Recoger en Tienda' | 'Envío a Domicilio'>('Recoger en Tienda');
     const [shippingDestination, setShippingDestination] = useState<'Bogotá' | 'Nacional'>('Bogotá');
     const [address, setAddress] = useState('');
     const [paymentMethod, setPaymentMethod] = useState('Nequi');
+    const [pickupBranchId, setPickupBranchId] = useState('');
 
     const paymentOptions = ['Nequi', 'Daviplata', 'Tarjeta', 'Addi', 'Sistecredito'];
     const FREE_SHIPPING_THRESHOLD = config?.freeShippingThreshold !== undefined ? Number(config.freeShippingThreshold) : 200000;
@@ -2405,6 +2306,7 @@ const InvoiceModal: React.FC<{
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        if (isSubmitting) return;
         if (!customerName || !customerPhone) {
             alert("Por favor, completa tu nombre y teléfono.");
             return;
@@ -2423,13 +2325,14 @@ const InvoiceModal: React.FC<{
         });
         
         const newOrderData: Omit<Order, 'docId' | 'orderNumber' | 'status' | 'date'> = {
-            customerName,
-            customerPhone,
+            customerName: customerName.trim(),
+            customerPhone: customerPhone.replace(/\D/g, ''),
             items: sanitizedCartItems,
             subtotal,
             shippingCost,
             total,
             deliveryMethod,
+            ...(deliveryMethod === 'Recoger en Tienda' && { pickupBranchId, pickupBranchName: branches.find(branch => branch.docId === pickupBranchId)?.name || '' }),
             ...(deliveryMethod === 'Envío a Domicilio' && { address: `${address} (${shippingDestination})` }),
             paymentMethod,
         };
@@ -2465,6 +2368,15 @@ const InvoiceModal: React.FC<{
                            <span className="ml-3 text-sm font-medium">Envío a Domicilio</span>
                         </label>
                      </div>
+                     {deliveryMethod === 'Recoger en Tienda' && (
+                        <div>
+                            <label className="block text-sm font-medium mb-1" htmlFor="pickup-branch">Sede para recoger tu pedido</label>
+                            <select id="pickup-branch" required value={pickupBranchId} onChange={e => setPickupBranchId(e.target.value)} className="w-full border rounded-md px-3 py-2">
+                                <option value="">Selecciona una sede</option>
+                                {branches.map(branch => <option key={branch.docId} value={branch.docId}>{branch.name}</option>)}
+                            </select>
+                        </div>
+                     )}
                      {deliveryMethod === 'Envío a Domicilio' && (
                         <div className="space-y-3">
                             <div>
@@ -2497,9 +2409,9 @@ const InvoiceModal: React.FC<{
                      </div>
                 </div>
                 <div className="p-4 border-t bg-gray-50">
-                    <button type="submit" className="w-full bg-green-500 text-white py-3 rounded-md hover:bg-green-600 flex items-center justify-center space-x-2 font-semibold">
+                    <button type="submit" disabled={isSubmitting || !cart.length} className="disabled:opacity-50 w-full bg-green-500 text-white py-3 rounded-md hover:bg-green-600 flex items-center justify-center space-x-2 font-semibold">
                         <WhatsAppIcon className="w-5 h-5" />
-                        <span>Enviar Pedido por WhatsApp</span>
+                        <span>{isSubmitting ? 'Guardando pedido…' : 'Enviar Pedido por WhatsApp'}</span>
                     </button>
                 </div>
             </form>
@@ -2512,7 +2424,7 @@ const Footer: React.FC<{ contact: StoreConfig['contact'], social: StoreConfig['s
         <div className="max-w-7xl 2xl:max-w-screen-2xl mx-auto py-12 px-4 sm:px-6 lg:px-8 grid grid-cols-1 md:grid-cols-3 gap-8">
             <div>
                 <h3 className="font-serif text-lg">Bombon</h3>
-                <p className="mt-2 text-gray-400">Ropa con estilo que cuenta tu historia.</p>
+                <p className="mt-2 text-gray-400">Ponte bonita para ti.</p>
             </div>
             <div>
                 <h3 className="font-semibold">Contacto</h3>
@@ -3265,15 +3177,22 @@ const AdminBannersTab: React.FC<{
 const AdminGeneralTab: React.FC<{config: StoreConfig, onSave: (c: StoreConfig) => Promise<void> | void}> = ({ config, onSave }) => {
     const [localConfig, setLocalConfig] = useState(config);
     const [isSaving, setIsSaving] = useState(false);
+    const [saveError, setSaveError] = useState('');
+    const [otherCompany, setOtherCompany] = useState(catalogCompany(config) !== DEFAULT_COMPANY_ID);
 
     useEffect(() => {
         setLocalConfig(config);
+        setOtherCompany(catalogCompany(config) !== DEFAULT_COMPANY_ID);
     }, [config]);
 
     const handleSave = async () => {
         setIsSaving(true);
+        setSaveError('');
         try {
-            await onSave(localConfig);
+            if (otherCompany && !localConfig.inventoryCompanyId?.trim()) throw new Error('Ingresa el identificador de la empresa.');
+            await onSave({ ...localConfig, inventoryCompanyId: catalogCompany(localConfig) });
+        } catch (error) {
+            setSaveError(error instanceof Error ? error.message : 'No se pudo guardar la configuración.');
         } finally {
             setIsSaving(false);
         }
@@ -3283,6 +3202,17 @@ const AdminGeneralTab: React.FC<{config: StoreConfig, onSave: (c: StoreConfig) =
         <div className="p-6">
             <h1 className="text-2xl font-bold mb-6">Configuración General</h1>
             <div className="bg-white rounded-lg shadow p-6 max-w-2xl space-y-6">
+                <div className="rounded-lg border border-pink-200 bg-pink-50 p-4 space-y-3">
+                    <h2 className="font-semibold">Empresa del catálogo</h2>
+                    <label htmlFor="catalog-company" className="block text-sm">Productos que se muestran en esta tienda</label>
+                    <select id="catalog-company" value={otherCompany ? 'custom' : DEFAULT_COMPANY_ID} onChange={e => { setOtherCompany(e.target.value === 'custom'); setLocalConfig({ ...localConfig, inventoryCompanyId: e.target.value === DEFAULT_COMPANY_ID ? DEFAULT_COMPANY_ID : '' }); }} className="w-full bg-white border rounded-md px-3 py-2">
+                        <option value={DEFAULT_COMPANY_ID}>Bombón y Street Legends</option>
+                        <option value="custom">Otra empresa de Vestika</option>
+                    </select>
+                    <AdminInput disabled={!otherCompany} label="Identificador de empresa en Vestika" value={localConfig.inventoryCompanyId ?? DEFAULT_COMPANY_ID} onChange={e => setLocalConfig({ ...localConfig, inventoryCompanyId: e.target.value })} placeholder="default_company" />
+                    <p className="text-xs text-gray-600">La configuración inicial corresponde a Bombón y Street Legends. Para conectar otra empresa, copia su identificador desde Vestika y guarda los cambios.</p>
+                </div>
+                {saveError && <p role="alert" className="text-sm text-red-700">{saveError}</p>}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <ImageUpload key={`logo-${localConfig.logoUrl}`} label="Logo Bombon (Principal)" currentImage={localConfig.logoUrl} onImageSelect={url => setLocalConfig({...localConfig, logoUrl: url})} />
                     <ImageUpload key={`second-logo-${localConfig.secondLogoUrl}`} label="Logo Street Legends (Hombre)" currentImage={localConfig.secondLogoUrl || ''} onImageSelect={url => setLocalConfig({...localConfig, secondLogoUrl: url})} />

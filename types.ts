@@ -15,6 +15,7 @@ export interface ProductVariants {
 
 export interface Product {
   id: string;
+  companyId?: string;
   name: string;
   description: string;
   price: number;
@@ -57,6 +58,7 @@ export interface SocialLinks {
 }
 
 export interface StoreConfig {
+  inventoryCompanyId?: string;
   logoUrl: string;
   secondLogoUrl?: string;
   contact: ContactInfo;
@@ -83,6 +85,9 @@ export interface CartItem {
 }
 
 export interface Order {
+  companyId?: string;
+  pickupBranchId?: string;
+  pickupBranchName?: string;
   docId: string;
   orderNumber: string;
   status: 'Pendiente' | 'En Proceso' | 'Enviado' | 'Completado' | 'Cancelado';
