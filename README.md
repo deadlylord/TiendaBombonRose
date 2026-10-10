@@ -35,3 +35,13 @@ npm run build
 El filtrado del cliente no sustituye las reglas de seguridad de Firebase. Esta versión no despliega ni modifica reglas de Firestore, no revoca cuentas existentes, no reserva stock ni valida pagos. La comprobación de precios/stock debe complementarse con un servicio de pedidos en servidor antes de ofrecer una compra automática con pago y reserva. Las reglas efectivamente desplegadas requieren revisión con acceso administrativo a Firebase; el archivo `firestore.rules` heredado no es una definición utilizable.
 
 El servidor Express contiene funciones de IA e Instagram; el build estático de Vite no las despliega como funciones Netlify. Esta actualización mantiene su infraestructura actual.
+
+## Experiencia de compra (0.4.0)
+
+La búsqueda reconoce palabras con o sin tilde y consulta nombre, nombre original, categoría y descripción. El catálogo completo y las categorías permiten filtrar por tallas y colores disponibles, ver ofertas y ordenar por precio final o fecha. Se muestran 24 productos inicialmente, con un botón para ampliar la lista sin consultar nuevamente Firebase.
+
+En el editor de productos se pueden guardar fotografías adicionales (URLs, una por línea) y una guía de tallas propia de la prenda. La guía solo aparece si se ha completado. Las fotos de producto se cargan bajo demanda y muestran un aviso si faltan; la fotografía principal de la ficha tiene carga inmediata. La cantidad máxima en celular y escritorio respeta el stock del catálogo. Los enlaces compartidos usan `/product/:id` y las recomendaciones permiten cambiar de prenda sin pasar por la portada.
+
+Guardar un producto espera la respuesta de Firebase; un error conserva el editor abierto. No se marca el origen colombiano automáticamente.
+
+El panel administrativo se descarga únicamente al abrirlo, y Tailwind se compila en el build en lugar de depender de un script CDN. Se eliminó la incorporación completa de `process.env` al frontend. `netlify.toml` establece validación y compilación antes de publicar `dist`; la conexión y el despliegue efectivos en Netlify deben comprobarse en esa plataforma. Las rutas conservan el fallback SPA de `public/_redirects`.

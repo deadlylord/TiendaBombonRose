@@ -1,22 +1,31 @@
 
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from "motion/react";
-import { Product, Category, Banner, StoreConfig, CartItem, Order, ToastMessage, ProductVariantDetail, ProductColorVariantDetail, ProductVariants, User, StoreBranch } from './types';
-import { db, storage, auth } from './services/firebase';
+import { Product, Category, Banner, StoreConfig, CartItem, Order, ToastMessage, ProductVariantDetail, ProductColorVariantDetail, User, StoreBranch } from './types';
+import { db, auth } from './services/firebase';
 import { usePosCatalog } from './services/usePosCatalog';
 import { useCatalogExtensions } from './services/useCatalogExtensions';
 import { buildCatalog, catalogCompany, DEFAULT_COMPANY_ID, validateCart } from './services/catalog';
 import { initializeApp, deleteApp } from 'firebase/app';
-import { doc, getDoc, onSnapshot, setDoc, collection, addDoc, updateDoc, deleteDoc, runTransaction, query, where, QueryConstraint } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { doc, getDoc, onSnapshot, setDoc, collection, updateDoc, deleteDoc, runTransaction, query, where, QueryConstraint } from 'firebase/firestore';
 import { onAuthStateChanged, getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, User as FirebaseUser } from 'firebase/auth';
 
 import {
   CartIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, InstagramIcon, MenuIcon,
   SearchIcon, TikTokIcon, WhatsAppIcon, TrashIcon, PlusIcon, MinusIcon,
-  PencilIcon, UploadIcon, ShareIcon, HeartIcon, ShoppingBagIcon, ArrowLeftIcon
+  PencilIcon, ShareIcon, HeartIcon, ShoppingBagIcon, ArrowLeftIcon
 } from './components/Icons';
+
+import CatalogControls from './components/CatalogControls';
+import ProductImage from './components/ProductImage';
+import { searchCatalog, availableVariantOptions, CatalogFilters, CatalogSort, salePrice } from './services/catalogSearch';
+import AdminInput from './components/AdminInput';
+import BranchesSection from './components/BranchesSection';
+import { generateProductDescription, getValidColor } from './services/productTools';
+import DeferredPanelBoundary from './components/DeferredPanelBoundary';
+
+const AdminPanel = lazy(() => import('./components/AdminPanel'));
 
 // --- MOCK DATA (Initial values for Firestore) ---
 const initialConfig: StoreConfig = {
@@ -43,67 +52,6 @@ const initialBanners: Banner[] = [
     { id: 3, imageUrl: 'https://i.ibb.co/P9M5dcD/banner3.jpg', title: 'Pantalones con Estilo', subtitle: 'Comodidad y elegancia en cada paso.', link: 'category:Pantalones' }
 ];
 
-
-const colorMap: Record<string, string> = {
-    'rojo': '#ef4444',
-    'azul': '#3b82f6',
-    'verde': '#22c55e',
-    'amarillo': '#eab308',
-    'negro': '#000000',
-    'blanco': '#ffffff',
-    'gris': '#6b7280',
-    'rosado': '#ec4899',
-    'morado': '#a855f7',
-    'naranja': '#f97316',
-    'café': '#78350f',
-    'cafe': '#78350f',
-    'beige': '#f5f5dc',
-    'fucsia': '#ff00ff',
-    'lila': '#c8a2c8',
-    'celeste': '#87ceeb',
-    'turquesa': '#40e0d0',
-    'vinotinto': '#800000',
-    'mostaza': '#ffdb58',
-    'crema': '#fffdd0',
-    'militar': '#4b5320',
-    'petroleo': '#00606e',
-};
-
-const getValidColor = (colorName: string) => {
-    const lower = colorName.toLowerCase().trim();
-    return colorMap[lower] || lower;
-};
-
-// --- AI Service ---
-const generateProductDescription = async (productName: string, imageUrl?: string): Promise<{ name: string, description: string } | string> => {
-    try {
-        const response = await fetch('/api/gemini/generate-description', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ productName, imageUrl })
-        });
-        
-        if (!response.ok) {
-            try {
-                const errData = await response.json();
-                return `Error: ${errData.error || 'No se pudo generar la descripción.'}`;
-            } catch (jsonErr) {
-                return `Error: Servidor devolvió código de estado ${response.status}`;
-            }
-        }
-        
-        const data = await response.json();
-        return {
-            name: data.name,
-            description: data.description
-        };
-    } catch (error: any) {
-        console.error("Error generating AI description:", error);
-        return `Error: ${error.message || "Error de conexión con el servidor."}`;
-    }
-};
 
 // --- Helper Functions ---
 const safeJsonStringify = (val: any): string => {
@@ -198,14 +146,6 @@ const useFirestoreCollectionSync = <T extends {docId: string}>(collectionName: s
     return [enabled && state.key === key ? state.data : [], enabled && (state.key !== key || state.loading)];
 };
 
-const uploadImageToStorage = async (file: File): Promise<string> => {
-    const fileName = `images/${Date.now()}-${file.name}`;
-    const storageRef = ref(storage, fileName);
-    await uploadBytes(storageRef, file);
-    const downloadURL = await getDownloadURL(storageRef);
-    return downloadURL;
-};
-
 const App: React.FC = () => {
     // Authentication gates every private collection subscription.
     const [isAdminOpen, setAdminOpen] = useState(false);
@@ -243,17 +183,20 @@ const App: React.FC = () => {
     const [productToEdit, setProductToEdit] = useState<Product | null>(null);
     const [toasts, setToasts] = useState<ToastMessage[]>([]);
     const [isProductDetailFromCart, setProductDetailFromCart] = useState(false);
-    
+
     // Theme State
     const [isMenTheme, setIsMenTheme] = useState(false);
-    
+
     // Search & Filter State
     const [searchTerm, setSearchTerm] = useState('');
+    const [selectedSizeFilter, setSelectedSizeFilter] = useState('');
+    const [selectedColorFilter, setSelectedColorFilter] = useState('');
+    const [catalogSort, setCatalogSort] = useState<CatalogSort>('recent');
     const [selectedCategory, setSelectedCategory] = useState<Category | 'All' | 'On Sale'>('All');
 
     // Admin State
     const [editMode, setEditMode] = useState(false);
-    
+
     const isAppLoading = isConfigLoading || areBannersLoading || areProductsLoading || areExtensionsLoading;
     const previousCompany = useRef(companyId);
     useEffect(() => {
@@ -264,6 +207,8 @@ const App: React.FC = () => {
             setInvoiceModalOpen(false);
             setSelectedCategory('All');
             setSearchTerm('');
+            setSelectedSizeFilter('');
+            setSelectedColorFilter('');
             pendingOrderRef.current = null;
         }
     }, [companyId]);
@@ -306,7 +251,8 @@ const App: React.FC = () => {
 
         // Handle Product Detail Modal
         if (productMatch) {
-            const productId = productMatch[1];
+            let productId = productMatch[1];
+            try { productId = decodeURIComponent(productId); } catch { /* Preserve malformed paths for the not-found flow. */ }
             const product = (products || []).find(p => p.id === productId);
             if (product) {
                 setSelectedProduct(product);
@@ -340,9 +286,9 @@ const App: React.FC = () => {
     const closeModal = () => {
         navigate('/');
     };
-    
+
     const handleOpenProductDetails = (product: Product) => {
-        navigate(`/product/${product.id}`);
+        navigate(`/product/${encodeURIComponent(product.id)}`);
     };
 
     const handleOpenCart = () => {
@@ -391,7 +337,7 @@ const App: React.FC = () => {
     const formatCurrency = (amount: number) => {
         return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(amount);
     };
-    
+
     const handleLogout = async () => {
         try {
             await signOut(auth);
@@ -406,39 +352,20 @@ const App: React.FC = () => {
     // --- DERIVED STATE & MEMOS ---
     const cartItemCount = useMemo(() => cart.reduce((sum, item) => sum + item.quantity, 0), [cart]);
     const cartSubtotal = useMemo(() => cart.reduce((sum, item) => sum + item.price * item.quantity, 0), [cart]);
-    
-    const filteredProducts = useMemo(() => {
-        const filtered = (products || []).filter(product => {
-            let matchesCategory = true;
-            if (selectedCategory === 'On Sale') {
-                matchesCategory = product.discountPercentage != null && product.discountPercentage > 0;
-            } else if (selectedCategory !== 'All') {
-                matchesCategory = product.category === selectedCategory;
-            }
-            
-            const searchTermClean = searchTerm.trim().toLowerCase();
-            if (!searchTermClean) {
-                // If no search term, only filter by category
-                return matchesCategory;
-            }
 
-            const searchWords = searchTermClean.split(/\s+/).filter(Boolean);
-            
-            const searchableText = `${product.name} ${product.rawName || ''}`.toLowerCase();
-            
-            // All search words must be present in the searchable text
-            const matchesSearch = searchWords.every(word => searchableText.includes(word));
-            
-            return matchesCategory && matchesSearch;
-        });
-
-        // Ensure newly added items always show up first, matching the home screen ordering
-        return [...filtered].sort((a, b) => {
-            const dateA = Math.max(a.updatedAt || 0, a.createdAt || 0);
-            const dateB = Math.max(b.updatedAt || 0, b.createdAt || 0);
-            return dateB - dateA;
-        });
-    }, [products, selectedCategory, searchTerm]);
+    const catalogFilters: CatalogFilters = { term: searchTerm, category: selectedCategory, size: selectedSizeFilter, color: selectedColorFilter, sort: catalogSort };
+    const filteredProducts = useMemo(() => searchCatalog(products, { term: searchTerm, category: selectedCategory, size: selectedSizeFilter, color: selectedColorFilter, sort: catalogSort }), [products, selectedCategory, searchTerm, selectedSizeFilter, selectedColorFilter, catalogSort]);
+    const sizeOptions = useMemo(() => availableVariantOptions(products, 'sizes'), [products]);
+    const colorOptions = useMemo(() => availableVariantOptions(products, 'colors'), [products]);
+    const handleCatalogFilters = (filters: CatalogFilters) => {
+        setSearchTerm(filters.term);
+        setSelectedCategory(filters.category);
+        setSelectedSizeFilter(filters.size);
+        setSelectedColorFilter(filters.color);
+        setCatalogSort(filters.sort);
+        if (currentPath !== '/search') navigate('/search');
+    };
+    const catalogControls = <CatalogControls filters={catalogFilters} categories={categories} sizes={sizeOptions} colors={colorOptions} count={filteredProducts.length} onChange={handleCatalogFilters} />;
 
     const newArrivals = useMemo(() => {
         return [...(products || [])]
@@ -472,9 +399,9 @@ const App: React.FC = () => {
         if (!window.confirm(`¿Estás seguro de que quieres generar descripciones con IA para los ${productsToUpdate.length} productos de la categoría "${category}"? Esto sobrescribirá las descripciones actuales.`)) {
             return;
         }
-        
+
         showToast(`Iniciando generación masiva para ${productsToUpdate.length} productos...`);
-        
+
         let successCount = 0;
         let lastError = '';
         for (const product of productsToUpdate) {
@@ -484,14 +411,16 @@ const App: React.FC = () => {
                     const updatedProduct = { ...product, description: result.description, name: result.name };
                     // We call handleUpdateProduct directly to persist each one
                     const extension = {
-          companyId,
+                        companyId,
                         nameOverride: updatedProduct.name,
                         descriptionOverride: updatedProduct.description,
                         imageUrlOverride: updatedProduct.imageUrl,
+                        additionalImages: (updatedProduct.additionalImages || []).map(image => image.trim()).filter(Boolean),
+                        sizeGuideText: updatedProduct.sizeGuideText || '',
                         priceOverride: updatedProduct.price,
-                        discountPercentage: updatedProduct.discountPercentage,
+                        discountPercentage: updatedProduct.discountPercentage || 0,
                         variants: updatedProduct.variants,
-                        madeInColombia: updatedProduct.madeInColombia
+                        madeInColombia: updatedProduct.madeInColombia || false
                     };
                     await setDoc(doc(db, 'product_extensions', updatedProduct.id), extension, { merge: true });
                     successCount++;
@@ -503,7 +432,7 @@ const App: React.FC = () => {
                 lastError = err.message || 'Error desconocido';
             }
         }
-        
+
         if (successCount > 0) {
             showToast(`¡Proceso completado! Se generaron ${successCount} descripciones.`);
         } else if (lastError) {
@@ -530,7 +459,7 @@ const App: React.FC = () => {
         const cartItemId = `${product.id}${size ? `-${size}` : ''}${color ? `-${color}` : ''}`;
         const existingItem = cart.find(item => item.id === cartItemId);
         const currentQuantity = cart.filter(item => item.productId === product.id).reduce((sum, item) => sum + item.quantity, 0);
-        
+
         if (product.stock !== undefined && (currentQuantity + quantity) > product.stock) {
             showToast(`No hay suficiente stock disponible. (Máx: ${product.stock})`, "error");
             return;
@@ -540,7 +469,7 @@ const App: React.FC = () => {
         const finalPrice = hasDiscount
             ? product.price * (1 - (product.discountPercentage || 0) / 100)
             : product.price;
-        
+
         if (existingItem) {
             setCart(cart.map(item => item.id === cartItemId ? { ...item, quantity: item.quantity + quantity } : item));
         } else {
@@ -557,14 +486,14 @@ const App: React.FC = () => {
             setCart([...cart, newItem]);
         }
         showToast(`${product.name} agregado al carrito!`);
-        
+
         if (isProductDetailFromCart) {
             navigate('/cart');
         } else {
             closeModal();
         }
     };
-    
+
     const handleQuickAddToCart = (product: Product) => {
       const hasDefinedSizes = !!(product.variants?.hasSizes && product.variants.sizes && Object.keys(product.variants.sizes).length > 0);
       const hasDefinedColors = !!(product.variants?.hasColors && product.variants.colors && Object.keys(product.variants.colors).length > 0);
@@ -576,7 +505,7 @@ const App: React.FC = () => {
         handleAddToCart(product, 1);
       }
     };
-    
+
     const handleQuickAddFromCart = (product: Product) => {
       const hasDefinedSizes = !!(product.variants?.hasSizes && product.variants.sizes && Object.keys(product.variants.sizes).length > 0);
       const hasDefinedColors = !!(product.variants?.hasColors && product.variants.colors && Object.keys(product.variants.colors).length > 0);
@@ -588,12 +517,12 @@ const App: React.FC = () => {
         handleAddToCart(product, 1);
       }
     };
-    
+
     const handleRemoveFromCart = (cartItemId: string) => {
         setCart(cart.filter(item => item.id !== cartItemId));
         showToast("Producto eliminado del carrito.", "error");
     };
-    
+
     const handleUpdateCartQuantity = (cartItemId: string, newQuantity: number) => {
         if (newQuantity <= 0) {
             handleRemoveFromCart(cartItemId);
@@ -608,12 +537,12 @@ const App: React.FC = () => {
         setCart([]);
         showToast("Carrito vaciado.", "error");
     };
-    
+
     const handleOpenProductEdit = (product: Product) => {
         setProductToEdit(product);
         handleOpenAdmin();
     };
-    
+
     useEffect(() => {
         if (!isAdminOpen) {
             setProductToEdit(null);
@@ -624,7 +553,7 @@ const App: React.FC = () => {
         e.preventDefault();
         setSelectedCategory(category);
         setMobileMenuOpen(false);
-        
+
         // Update theme based on category
         if (category === 'All') {
             setIsMenTheme(false);
@@ -636,10 +565,10 @@ const App: React.FC = () => {
 
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
-    
+
     const handleCategoryButtonClick = (category: Category | 'All') => {
       setSelectedCategory(category);
-      
+
       // Update theme based on category
       if (category === 'All') {
           setIsMenTheme(false);
@@ -651,12 +580,12 @@ const App: React.FC = () => {
 
       window.scrollTo({ top: 0, behavior: 'smooth' });
     };
-    
+
     const handleSearchAndNavigate = (term: string, category?: Category | 'All' | 'On Sale') => {
         setSearchTerm(term);
         if (category !== undefined) {
             setSelectedCategory(category);
-            
+
             // Update theme based on category
             if (category === 'All' || category === 'On Sale') {
                 setIsMenTheme(false);
@@ -666,26 +595,28 @@ const App: React.FC = () => {
                 setIsMenTheme(isMen);
             }
         }
-        
+
         if (term === '' && category === undefined) {
             // Back button case
             setSelectedCategory('All');
+            setSelectedSizeFilter('');
+            setSelectedColorFilter('');
             setIsSearching(false);
             navigate('/');
-        } else if (window.location.hash !== '#/search') {
+        } else if (currentPath !== '/search') {
             setIsSearching(false);
         }
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
-    
+
     // --- ADMIN CRUD HANDLERS ---
-    const handleUpdateConfig = async (newConfig: StoreConfig) => { 
+    const handleUpdateConfig = async (newConfig: StoreConfig) => {
         try {
             if (userData?.role !== 'admin') throw new Error('Solo un administrador puede cambiar la configuración.');
             const inventoryCompanyId = catalogCompany(newConfig);
             if (!/^[A-Za-z0-9_-]{1,128}$/.test(inventoryCompanyId)) throw new Error('El identificador de empresa no es válido.');
             await setConfig({ ...newConfig, inventoryCompanyId });
-            showToast("¡Configuración guardada con éxito!"); 
+            showToast("¡Configuración guardada con éxito!");
         } catch (error) {
             console.error("Error updating config:", error);
             showToast(error instanceof Error ? error.message : 'Error al guardar la configuración.', 'error');
@@ -695,50 +626,69 @@ const App: React.FC = () => {
     const handleSaveBanners = (newBanners: Banner[]) => { setBannersDoc({ list: newBanners }); showToast("Banners principales guardados."); };
     const handleSaveMenBanners = (newBanners: Banner[]) => { setMenBannersDoc({ list: newBanners }); showToast("Banners de hombre guardados."); };
     const handleSaveCategories = (newCategories: Category[]) => { setCategoriesDoc({ list: newCategories }); showToast("Categorías guardadas."); };
-    
-    const handleAddProduct = (newProduct: Product) => {
-      // In this setup, we don't add products to POS from here usually, 
-      // but if we do, we save the extension part locally.
-      const extension = {
-          companyId,
-          nameOverride: newProduct.name,
-          imageUrlOverride: newProduct.imageUrl,
-          priceOverride: newProduct.price,
-          discountPercentage: newProduct.discountPercentage,
-          variants: newProduct.variants,
-          isFeatured: newProduct.isFeatured,
-          isNewArrival: newProduct.isNewArrival,
-          updatedAt: Date.now()
-      };
-      setDoc(doc(db, 'product_extensions', newProduct.id), extension, { merge: true });
-      showToast("Producto configurado localmente.");
+
+    const handleAddProduct = async (newProduct: Product) => {
+      try {
+          // In this setup, we don't add products to POS from here usually,
+          // but if we do, we save the extension part locally.
+          const extension = {
+              companyId,
+              nameOverride: newProduct.name,
+              descriptionOverride: newProduct.description,
+              imageUrlOverride: newProduct.imageUrl,
+              additionalImages: (newProduct.additionalImages || []).map(image => image.trim()).filter(Boolean),
+              sizeGuideText: newProduct.sizeGuideText || '',
+              priceOverride: newProduct.price,
+              discountPercentage: newProduct.discountPercentage || 0,
+              variants: newProduct.variants,
+              isFeatured: newProduct.isFeatured || false,
+              isNewArrival: newProduct.isNewArrival || false,
+              updatedAt: Date.now()
+          };
+          await setDoc(doc(db, 'product_extensions', newProduct.id), extension, { merge: true });
+          showToast("Producto configurado localmente.");
+          return true;
+      } catch (error) {
+          console.error(error);
+          showToast('No se pudo guardar el producto. Intenta nuevamente.', 'error');
+          return false;
+      }
     };
 
-    const handleUpdateProduct = (updatedProduct: Product) => {
-      const extension = {
-          companyId,
-          nameOverride: updatedProduct.name,
-          descriptionOverride: updatedProduct.description,
-          imageUrlOverride: updatedProduct.imageUrl,
-          priceOverride: updatedProduct.price,
-          discountPercentage: updatedProduct.discountPercentage,
-          variants: updatedProduct.variants,
-          madeInColombia: updatedProduct.madeInColombia,
-          isFeatured: updatedProduct.isFeatured,
-          isNewArrival: updatedProduct.isNewArrival,
-          updatedAt: Date.now()
-      };
-      setDoc(doc(db, 'product_extensions', updatedProduct.id), extension, { merge: true });
-      showToast("Producto actualizado localmente.");
+    const handleUpdateProduct = async (updatedProduct: Product) => {
+      try {
+          const extension = {
+              companyId,
+              nameOverride: updatedProduct.name,
+              descriptionOverride: updatedProduct.description,
+              imageUrlOverride: updatedProduct.imageUrl,
+              additionalImages: (updatedProduct.additionalImages || []).map(image => image.trim()).filter(Boolean),
+              sizeGuideText: updatedProduct.sizeGuideText || '',
+              priceOverride: updatedProduct.price,
+              discountPercentage: updatedProduct.discountPercentage || 0,
+              variants: updatedProduct.variants,
+              madeInColombia: updatedProduct.madeInColombia || false,
+              isFeatured: updatedProduct.isFeatured || false,
+              isNewArrival: updatedProduct.isNewArrival || false,
+              updatedAt: Date.now()
+          };
+          await setDoc(doc(db, 'product_extensions', updatedProduct.id), extension, { merge: true });
+          showToast("Producto actualizado localmente.");
+          return true;
+      } catch (error) {
+          console.error(error);
+          showToast('No se pudo guardar el producto. Intenta nuevamente.', 'error');
+          return false;
+      }
     };
-    
+
     const handleDeleteProduct = (productId: string) => {
         if (window.confirm("¿Estás seguro de que quieres eliminar la configuración local de este producto? El producto seguirá existiendo en el POS.")) {
             deleteDoc(doc(db, 'product_extensions', productId));
             showToast("Configuración local eliminada.", "error");
         }
     };
-    
+
     const handleNewOrder = async (orderData: Omit<Order, 'docId' | 'orderNumber' | 'status' | 'date'>) => {
         if (orderingLock.current) return;
         orderingLock.current = true;
@@ -855,7 +805,7 @@ const App: React.FC = () => {
             showToast("Error al cambiar el rol.", "error");
         }
     };
-    
+
     const handleDeleteUser = async (userDocId: string) => {
         if (userData?.role !== 'admin') return;
         if (window.confirm("¿Seguro que quieres eliminar a este usuario? Perderá el acceso al panel. Esta acción no se puede deshacer.")) {
@@ -884,19 +834,19 @@ const App: React.FC = () => {
             </div>
         );
     }
-    
+
     // --- UI COMPONENTS ---
     const ToastContainer = () => (
         <div className="fixed bottom-5 right-5 md:bottom-8 md:right-8 z-[100] space-y-2 pointer-events-none">
             {toasts.map(toast => (
-                <motion.div 
+                <motion.div
                     key={toast.id}
                     initial={{ opacity: 0, y: 20, scale: 0.95 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.9 }}
                     className={`pointer-events-auto px-5 py-3.5 rounded-2xl shadow-2xl font-semibold ${
-                        toast.type === 'success' 
-                        ? 'bg-white/90 text-primary border border-primary/30' 
+                        toast.type === 'success'
+                        ? 'bg-white/90 text-primary border border-primary/30'
                         : 'bg-red-500/95 text-white border border-white/10'
                     } flex items-center gap-3 max-w-sm backdrop-blur-md`}
                 >
@@ -906,7 +856,7 @@ const App: React.FC = () => {
             ))}
         </div>
     );
-    
+
     const ProductCarousel: React.FC<{ title: string; products: Product[] }> = ({ title, products: carouselProducts }) => {
         const scrollContainerRef = useRef<HTMLDivElement>(null);
         const intervalRef = useRef<number | null>(null);
@@ -920,7 +870,7 @@ const App: React.FC = () => {
                 });
             }
         };
-        
+
         const stopAutoScroll = () => {
             if (intervalRef.current) {
                 clearInterval(intervalRef.current);
@@ -951,14 +901,14 @@ const App: React.FC = () => {
                 stopAutoScroll();
             }
         }, [startAutoScroll]);
-        
+
         if (!carouselProducts || carouselProducts.length === 0) return null;
 
         return (
           <section className="py-12 bg-white">
             <div className="max-w-7xl 2xl:max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
               <h2 className="text-3xl font-serif text-center mb-8 text-on-surface">{title}</h2>
-              <div 
+              <div
                 className="relative group/carousel"
                 onMouseEnter={stopAutoScroll}
                 onMouseLeave={startAutoScroll}
@@ -969,8 +919,8 @@ const App: React.FC = () => {
                   <div ref={scrollContainerRef} className="flex overflow-x-auto space-x-6 pb-4 -mx-4 px-4 scrollbar-hide">
                       {carouselProducts.map(product => (
                           <div key={product.id} className="flex-shrink-0 w-64 sm:w-72">
-                              <ProductCard 
-                                  product={product} 
+                              <ProductCard
+                                  product={product}
                                   onOpenDetails={handleOpenProductDetails}
                                   onQuickAdd={handleQuickAddToCart}
                                   editMode={editMode}
@@ -989,11 +939,11 @@ const App: React.FC = () => {
           </section>
         );
     };
-    
+
     // --- RENDER ADMIN OR LOGIN VIEW ---
     const renderAdminView = () => {
         if (!isAdminOpen) return null;
-        
+
         if (isAuthLoading) {
              return (
                 <div className="fixed inset-0 bg-black/60 z-[90] flex items-center justify-center">
@@ -1008,10 +958,10 @@ const App: React.FC = () => {
         if (!currentUser || !userData) {
             return <LoginPage showToast={showToast} onClose={closeModal} />;
         }
-        
+
         if (areOrdersLoading || areUsersLoading) return <div className="fixed inset-0 z-[90] bg-white flex items-center justify-center">Cargando administración…</div>;
         return (
-            <AdminPanel
+            <DeferredPanelBoundary><Suspense fallback={<div className="fixed inset-0 z-[90] bg-white flex items-center justify-center">Abriendo administración…</div>}><AdminPanel
                 user={userData}
                 onClose={closeModal}
                 editMode={editMode}
@@ -1034,13 +984,13 @@ const App: React.FC = () => {
                 onUpdateUserRole={handleUpdateUserRole}
                 onDeleteUser={handleDeleteUser}
                 branches={branches}
-            />
+            /></Suspense></DeferredPanelBoundary>
         );
     }
 
     // --- MAIN RENDER ---
     const hasAnnouncements = config?.showAnnouncements !== false && config?.announcements && config.announcements.some(ann => ann.trim() !== '');
-    
+
     return (
         <div className="bg-background min-h-screen">
             <ToastContainer />
@@ -1059,10 +1009,10 @@ const App: React.FC = () => {
                 isMenTheme={isMenTheme}
                 config={config}
             />
-            
+
             <div className={`transition-all ${hasAnnouncements ? 'h-28' : 'h-20'}`} />
             {catalogError && <div role="alert" className="mx-auto max-w-3xl my-6 p-4 bg-rose-50 text-rose-900 rounded-lg text-center">{catalogError}</div>}
-            
+
             <CategoryNav
               categories={categories}
               selectedCategory={selectedCategory}
@@ -1074,7 +1024,7 @@ const App: React.FC = () => {
             <main className="pt-12">
               <AnimatePresence mode="wait">
                 {isSearching ? (
-                  <motion.section 
+                  <motion.section
                     key="search"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
@@ -1083,7 +1033,7 @@ const App: React.FC = () => {
                   >
                     <div className="max-w-7xl 2xl:max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
                         <div className="flex items-center gap-4 mb-8">
-                            <button 
+                            <button
                                 onClick={() => handleSearchAndNavigate('')}
                                 className="p-2 hover:bg-gray-100 rounded-full transition-colors"
                             >
@@ -1100,10 +1050,10 @@ const App: React.FC = () => {
                                 onSubmit={(e) => e.preventDefault()}
                             >
                                <div className="relative w-full group">
-                                   <input 
+                                   <input
                                        autoFocus
-                                       type="text" 
-                                       placeholder="¿Qué estás buscando hoy?" 
+                                       type="text"
+                                       placeholder="¿Qué estás buscando hoy?"
                                        value={searchTerm}
                                        onChange={(e) => setSearchTerm(e.target.value)}
                                        className="w-full bg-white border-2 border-primary/30 rounded-full pl-14 pr-6 py-4 text-lg focus:ring-4 focus:ring-primary/20 focus:border-primary shadow-lg transition-all duration-300"
@@ -1119,8 +1069,10 @@ const App: React.FC = () => {
                               {searchTerm.trim() ? `Resultados para "${searchTerm}"` : 'Explora nuestros productos'}
                             </h3>
 
-                            <ProductGrid 
-                                products={filteredProducts} 
+                            {catalogControls}
+                            <ProductGrid
+                                products={filteredProducts}
+                                resultKey={JSON.stringify(catalogFilters)}
                                 onOpenDetails={handleOpenProductDetails}
                                 onQuickAdd={handleQuickAddToCart}
                                 editMode={editMode}
@@ -1128,36 +1080,31 @@ const App: React.FC = () => {
                                 onOpenEdit={handleOpenProductEdit}
                                 formatCurrency={formatCurrency}
                             />
-                            
-                            {searchTerm.trim() && filteredProducts.length === 0 && (
-                                <div className="text-center py-20">
-                                    <SearchIcon className="w-16 h-16 text-gray-200 mx-auto mb-4" />
-                                    <p className="text-gray-500 text-xl">No encontramos nada que coincida con "{searchTerm}"</p>
-                                    <p className="text-gray-400 mt-2">Intenta con otras palabras o explora las categorías.</p>
-                                </div>
-                            )}
+
+
                         </div>
                     </div>
                   </motion.section>
                 ) : selectedCategory === 'All' ? (
-                  <motion.div 
+                  <motion.div
                     key="all"
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -20 }}
                     transition={{ duration: 0.3 }}
                   >
-                    <BannerCarousel 
-                        banners={isMenTheme ? menBanners : banners} 
-                        onNavigateToCategory={(cat) => handleCategoryButtonClick(cat as Category)} 
+                    <BannerCarousel
+                        banners={isMenTheme ? menBanners : banners}
+                        onNavigateToCategory={(cat) => handleCategoryButtonClick(cat as Category)}
                         isMenTheme={isMenTheme}
                     />
-                    
+
                     <ProductCarousel title="Recién llegados ✨🆕" products={newArrivals} />
                     <ProductCarousel title="En tendencia 🔥📱" products={bestSellers} />
+                    <div className="pb-12 text-center"><button type="button" className="rounded-full bg-primary px-8 py-4 font-semibold text-white hover:bg-primary-dark" onClick={() => handleCatalogFilters({ term: '', category: 'All', size: '', color: '', sort: 'recent' })}>Ver todos los productos</button></div>
                   </motion.div>
                 ) : (
-                  <motion.section 
+                  <motion.section
                     key={selectedCategory}
                     initial={{ opacity: 0, scale: 0.98 }}
                     animate={{ opacity: 1, scale: 1 }}
@@ -1167,7 +1114,7 @@ const App: React.FC = () => {
                   >
                     <div className="max-w-7xl 2xl:max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
                         {/* Category Header */}
-                        <motion.div 
+                        <motion.div
                             initial={{ y: -20, opacity: 0 }}
                             animate={{ y: 0, opacity: 1 }}
                             transition={{ delay: 0.2, duration: 0.5 }}
@@ -1176,22 +1123,24 @@ const App: React.FC = () => {
                             <h1 className="text-4xl md:text-5xl font-serif font-bold mb-4 text-on-surface cyber-text uppercase tracking-widest">
                                 {selectedCategory}
                             </h1>
-                            <motion.div 
+                            <motion.div
                                 initial={{ width: 0 }}
                                 animate={{ width: 96 }}
                                 transition={{ delay: 0.4, duration: 0.6 }}
-                                className="h-1 bg-primary mx-auto rounded-full" 
+                                className="h-1 bg-primary mx-auto rounded-full"
                             />
                         </motion.div>
 
                         {/* Product Grid */}
-                        <motion.div 
+                        <motion.div
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             transition={{ delay: 0.4, duration: 0.5 }}
                         >
-                            <ProductGrid 
-                                products={filteredProducts} 
+                            {catalogControls}
+                            <ProductGrid
+                                products={filteredProducts}
+                                resultKey={JSON.stringify(catalogFilters)}
                                 onOpenDetails={handleOpenProductDetails}
                                 onQuickAdd={handleQuickAddToCart}
                                 editMode={editMode}
@@ -1200,49 +1149,34 @@ const App: React.FC = () => {
                                 formatCurrency={formatCurrency}
                             />
                         </motion.div>
-                        
-                        {filteredProducts.length === 0 && (
-                            <motion.div 
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                className="text-center py-20"
-                            >
-                                <ShoppingBagIcon className="w-16 h-16 text-gray-200 mx-auto mb-4" />
-                                <p className="text-gray-500 text-lg">No se encontraron productos en esta categoría.</p>
-                                <button 
-                                    onClick={() => handleCategoryButtonClick('All')}
-                                    className="mt-6 text-primary font-bold hover:underline"
-                                >
-                                    Volver al catálogo completo
-                                </button>
-                            </motion.div>
-                        )}
+
+
                     </div>
                   </motion.section>
                 )}
               </AnimatePresence>
             </main>
-            
+
             <BranchesSection branches={branches} />
             <Footer contact={config.contact} social={config.social} onAdminClick={handleOpenAdmin} />
 
-            {isCartOpen && <CartPanel 
-                onClose={closeModal} 
-                cart={cart} 
-                subtotal={cartSubtotal} 
-                onUpdateQuantity={handleUpdateCartQuantity} 
-                onRemoveItem={handleRemoveFromCart} 
-                onCheckout={() => navigate('/checkout')} 
-                formatCurrency={formatCurrency} 
-                suggestedProducts={bestSellers} 
-                onAddSuggestedProduct={handleQuickAddFromCart} 
+            {isCartOpen && <CartPanel
+                onClose={closeModal}
+                cart={cart}
+                subtotal={cartSubtotal}
+                onUpdateQuantity={handleUpdateCartQuantity}
+                onRemoveItem={handleRemoveFromCart}
+                onCheckout={() => navigate('/checkout')}
+                formatCurrency={formatCurrency}
+                suggestedProducts={bestSellers}
+                onAddSuggestedProduct={handleQuickAddFromCart}
                 onClearCart={handleClearCart}
                 onContinueShopping={closeModal}
                 isMenTheme={isMenTheme}
                 config={config}
             />}
             {renderAdminView()}
-            {selectedProduct && selectedProduct.companyId === companyId && <ProductDetailModal product={selectedProduct} onClose={closeModal} onAddToCart={handleAddToCart} formatCurrency={formatCurrency} showToast={showToast} allProducts={products} config={config} />}
+            {selectedProduct && selectedProduct.companyId === companyId && <ProductDetailModal product={selectedProduct} onClose={closeModal} onAddToCart={handleAddToCart} formatCurrency={formatCurrency} showToast={showToast} allProducts={products} config={config} onSelectProduct={handleOpenProductDetails} />}
             {isInvoiceModalOpen && <InvoiceModal onClose={() => navigate('/cart')} cart={cart} subtotal={cartSubtotal} onSubmitOrder={handleNewOrder} isSubmitting={isOrdering} branches={branches} config={config} formatCurrency={formatCurrency} />}
             {isAddUserModalOpen && <AddUserModal onClose={() => setAddUserModalOpen(false)} onCreateUser={handleCreateUser} />}
 
@@ -1262,22 +1196,22 @@ const App: React.FC = () => {
 
 // --- SUB-COMPONENTS ---
 
-const ProductCard: React.FC<{ 
-    product: Product; 
-    onOpenDetails: (p: Product) => void; 
-    onQuickAdd: (p: Product) => void; 
-    editMode: boolean; 
-    userRole?: string; 
-    onOpenEdit: (p: Product) => void; 
+const ProductCard: React.FC<{
+    product: Product;
+    onOpenDetails: (p: Product) => void;
+    onQuickAdd: (p: Product) => void;
+    editMode: boolean;
+    userRole?: string;
+    onOpenEdit: (p: Product) => void;
     formatCurrency: (n: number) => string;
 }> = ({ product, onOpenDetails, onQuickAdd, editMode, userRole, onOpenEdit, formatCurrency }) => {
     const hasDiscount = product.discountPercentage != null && product.discountPercentage > 0;
     const discountedPrice = hasDiscount ? product.price * (1 - product.discountPercentage! / 100) : product.price;
 
     return (
-        <div className="relative group bg-surface rounded-lg shadow-md overflow-hidden flex flex-col h-full cursor-pointer cyber-border" onClick={() => onOpenDetails(product)}>
+        <div role="button" tabIndex={0} aria-label={`Ver ${product.name}`} onKeyDown={event => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onOpenDetails(product); } }} className="relative group bg-surface rounded-lg shadow-md overflow-hidden flex flex-col h-full cursor-pointer cyber-border" onClick={() => onOpenDetails(product)}>
             <div className="relative aspect-[3/4] w-full overflow-hidden bg-surface/50">
-                <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" referrerPolicy="no-referrer" />
+                <ProductImage src={product.imageUrl} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
                 {!product.available && (
                     <div className="absolute top-2 left-2 bg-on-surface text-background text-xs font-bold px-2 py-1 rounded">AGOTADO</div>
                 )}
@@ -1323,15 +1257,18 @@ const ProductCard: React.FC<{
 };
 
 
-const ProductGrid: React.FC<{ 
+const ProductGrid: React.FC<{
     products: Product[];
+    resultKey: string;
     onOpenDetails: (p: Product) => void;
     onQuickAdd: (p: Product) => void;
     editMode: boolean;
     userRole?: string;
     onOpenEdit: (p: Product) => void;
     formatCurrency: (n: number) => string;
-}> = ({ products, onOpenDetails, onQuickAdd, editMode, userRole, onOpenEdit, formatCurrency }) => {
+}> = ({ products, resultKey, onOpenDetails, onQuickAdd, editMode, userRole, onOpenEdit, formatCurrency }) => {
+    const [page, setPage] = useState({ key: resultKey, count: 24 });
+    const visibleCount = page.key === resultKey ? page.count : 24;
     if (products.length === 0) {
         return (
             <div className="col-span-full py-20 text-center">
@@ -1343,11 +1280,11 @@ const ProductGrid: React.FC<{
     }
 
     return (
-        <div className="w-full grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 md:gap-6">
-            {products.map(product => (
-                <ProductCard 
-                    key={product.id} 
-                    product={product} 
+        <div><div className="w-full grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 md:gap-6">
+            {products.slice(0, visibleCount).map(product => (
+                <ProductCard
+                    key={product.id}
+                    product={product}
                     onOpenDetails={onOpenDetails}
                     onQuickAdd={onQuickAdd}
                     editMode={editMode}
@@ -1356,6 +1293,8 @@ const ProductGrid: React.FC<{
                     formatCurrency={formatCurrency}
                 />
             ))}
+        </div>
+        {visibleCount < products.length && <div className="mt-8 text-center"><button type="button" className="rounded-full border-2 border-primary px-8 py-3 font-semibold text-primary hover:bg-primary/5" onClick={() => setPage({ key: resultKey, count: visibleCount + 24 })}>Mostrar más ({Math.min(visibleCount, products.length)} de {products.length})</button></div>}
         </div>
     );
 };
@@ -1392,7 +1331,7 @@ const AddUserModal: React.FC<{
             setIsLoading(false);
         }
     };
-    
+
     return (
         <div className="fixed inset-0 bg-black/60 z-[95] flex items-center justify-center p-4" onClick={onClose}>
             <div className="bg-white rounded-lg shadow-xl w-full max-w-sm relative" onClick={e => e.stopPropagation()}>
@@ -1404,19 +1343,19 @@ const AddUserModal: React.FC<{
                          <h2 className="text-2xl font-bold font-serif text-on-surface">Agregar Nuevo Usuario</h2>
                          <p className="text-sm text-gray-600 mt-1">Crea una cuenta para un nuevo miembro del equipo.</p>
                     </div>
-                    
+
                     <div className="space-y-4">
                         <AdminInput
                             ref={emailInputRef}
-                            label="Correo Electrónico" 
-                            type="email" 
+                            label="Correo Electrónico"
+                            type="email"
                             value={email}
                             onChange={e => setEmail(e.target.value)}
                             required
                         />
                         <AdminInput
-                            label="Contraseña Temporal" 
-                            type="password" 
+                            label="Contraseña Temporal"
+                            type="password"
                             value={password}
                             onChange={e => setPassword(e.target.value)}
                             required
@@ -1430,9 +1369,9 @@ const AddUserModal: React.FC<{
                             </select>
                         </div>
                     </div>
-                    
+
                     {error && <p className="text-red-500 text-sm mt-4 text-center w-full">{error}</p>}
-                    
+
                     <button type="submit" disabled={isLoading} className="mt-6 w-full bg-primary text-white py-2 rounded-md hover:bg-primary-dark transition-colors disabled:bg-primary-light disabled:cursor-wait">
                         {isLoading ? 'Creando...' : 'Crear Usuario'}
                     </button>
@@ -1477,7 +1416,7 @@ const LoginPage: React.FC<{
         setIsLoading(false);
     }
   };
-  
+
   return (
     <div className="fixed inset-0 bg-black/60 z-[90] flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white rounded-lg shadow-xl w-full max-w-sm relative" onClick={e => e.stopPropagation()}>
@@ -1489,27 +1428,27 @@ const LoginPage: React.FC<{
                  <h2 className="text-2xl font-bold font-serif text-on-surface">Iniciar Sesión</h2>
                  <p className="text-sm text-gray-600 mt-1">Ingresa tus credenciales para continuar.</p>
             </div>
-            
+
             <div className="space-y-4">
                 <AdminInput
                     ref={emailInputRef}
-                    label="Correo Electrónico" 
-                    type="email" 
+                    label="Correo Electrónico"
+                    type="email"
                     value={email}
                     onChange={e => setEmail(e.target.value)}
                     required
                 />
                 <AdminInput
-                    label="Contraseña" 
-                    type="password" 
+                    label="Contraseña"
+                    type="password"
                     value={password}
                     onChange={e => setPassword(e.target.value)}
                     required
                 />
             </div>
-            
+
             {error && <p className="text-red-500 text-sm mt-4 text-center w-full">{error}</p>}
-            
+
             <button type="submit" disabled={isLoading} className="mt-6 w-full bg-primary text-white py-2 rounded-md hover:bg-primary-dark transition-colors disabled:bg-primary-light disabled:cursor-wait">
                 {isLoading ? 'Ingresando...' : 'Entrar'}
             </button>
@@ -1530,7 +1469,7 @@ const Header: React.FC<{
     isMenTheme?: boolean,
     config?: StoreConfig
 }> = ({ logoUrl, cartItemCount, onCartClick, isMobileMenuOpen, setMobileMenuOpen, categories, onSelectCategory, selectedCategory, currentUser, onAdminClick, onSearchClick, isMenTheme, config }) => {
-    
+
     const baseLinkClasses = 'block text-lg px-4 py-3 rounded-md transition-colors';
     const activeLinkClasses = `font-semibold cyber-text ${isMenTheme ? 'cyber-gradient-bg text-white' : 'bg-primary/20 text-primary'}`;
     const inactiveLinkClasses = 'hover:bg-primary/10 hover:text-primary';
@@ -1543,7 +1482,7 @@ const Header: React.FC<{
             contactElement.scrollIntoView({ behavior: 'smooth' });
         }
     };
-    
+
     const handleLogoClick = (e: React.MouseEvent) => {
         e.preventDefault();
         window.location.hash = '/';
@@ -1565,8 +1504,8 @@ const Header: React.FC<{
                 <div className="max-w-7xl 2xl:max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 w-full h-20">
                     <div className="flex items-center justify-between h-full">
                         <div className="flex-1 flex justify-start">
-                            <button 
-                                className="text-on-surface hover:text-primary p-2 rounded-full hover:bg-gray-100/50 transition-all active:scale-90" 
+                            <button
+                                className="text-on-surface hover:text-primary p-2 rounded-full hover:bg-gray-100/50 transition-all active:scale-90"
                                 onClick={() => setMobileMenuOpen(true)}
                                 aria-label="Abrir menú"
                             >
@@ -1594,12 +1533,12 @@ const Header: React.FC<{
                                     <CartIcon className="w-6 h-6" />
                                 </motion.div>
                                 {cartItemCount > 0 && (
-                                    <motion.span 
+                                    <motion.span
                                         key={`badge-${cartItemCount}`}
                                         initial={{ scale: 0.5, opacity: 0 }}
                                         animate={{ scale: 1, opacity: 1 }}
                                         transition={{ type: "spring", stiffness: 500, damping: 15 }}
-                                        className="absolute top-1.5 right-1.5 bg-primary text-white text-[10px] font-black rounded-full h-5 w-5 flex items-center justify-center shadow-lg shadow-primary/30" 
+                                        className="absolute top-1.5 right-1.5 bg-primary text-white text-[10px] font-black rounded-full h-5 w-5 flex items-center justify-center shadow-lg shadow-primary/30"
                                         aria-label={`${cartItemCount} productos en el carrito`}
                                     >
                                         {cartItemCount}
@@ -1612,14 +1551,14 @@ const Header: React.FC<{
             </header>
 
             {/* Mobile Menu Overlay */}
-            <div 
+            <div
                 className={`fixed inset-0 bg-black/60 z-[55] transition-opacity duration-300 ease-in-out ${isMobileMenuOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
                 onClick={() => setMobileMenuOpen(false)}
                 aria-hidden={!isMobileMenuOpen}
             />
-            
+
             {/* Mobile Menu Panel */}
-            <div 
+            <div
                 className={`fixed top-0 left-0 h-full w-80 max-w-[80vw] bg-surface shadow-xl flex flex-col z-[60] transition-transform duration-300 ease-in-out ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}
                 role="dialog"
                 aria-modal="true"
@@ -1711,8 +1650,8 @@ const AnnouncementBar: React.FC<{ announcements: string[]; isMenTheme?: boolean 
 
     return (
         <div className={`w-full h-8 flex items-center justify-center font-bold text-xs text-center px-4 overflow-hidden relative select-none ${
-            isMenTheme 
-            ? 'cyber-gradient-bg text-white tracking-widest uppercase text-[9px]' 
+            isMenTheme
+            ? 'cyber-gradient-bg text-white tracking-widest uppercase text-[9px]'
             : 'bg-primary text-white tracking-[0.2em] text-[9px] uppercase'
         }`} id="top-announcement-bar">
             {validAnnouncements.length === 1 ? (
@@ -1723,8 +1662,8 @@ const AnnouncementBar: React.FC<{ announcements: string[]; isMenTheme?: boolean 
                         <div
                             key={idx}
                             className={`absolute inset-0 flex items-center justify-center transition-all duration-700 ease-in-out ${
-                                idx === currentIndex 
-                                    ? 'opacity-100 transform translate-y-0' 
+                                idx === currentIndex
+                                    ? 'opacity-100 transform translate-y-0'
                                     : 'opacity-0 transform translate-y-2 pointer-events-none'
                             }`}
                         >
@@ -1776,8 +1715,8 @@ const BannerCarousel: React.FC<{ banners: Banner[]; onNavigateToCategory: (categ
                     <div className="absolute inset-0 bg-black/20 flex flex-col items-center justify-center text-center text-white p-4">
                         <h2 className={`text-4xl md:text-6xl font-serif ${isMenTheme ? 'cyber-gradient-text' : ''}`}>{banner.title}</h2>
                         <p className="mt-2 text-lg md:text-xl">{banner.subtitle}</p>
-                        <a 
-                           href={banner.link.startsWith('category:') ? '#productos' : banner.link} 
+                        <a
+                           href={banner.link.startsWith('category:') ? '#productos' : banner.link}
                            onClick={(e) => handleBannerClick(e, banner)}
                            className={`mt-6 px-8 py-3 rounded-full font-semibold transition-colors duration-300 shadow-lg ${isMenTheme ? 'cyber-gradient-bg text-white' : 'bg-primary text-white hover:bg-primary-dark'}`}
                         >
@@ -1812,12 +1751,12 @@ const CartPanel: React.FC<{
     const FREE_SHIPPING_THRESHOLD = config?.freeShippingThreshold !== undefined ? Number(config.freeShippingThreshold) : 200000;
     const missingForFreeShipping = Math.max(0, FREE_SHIPPING_THRESHOLD - subtotal);
     const progressPercentage = Math.min(100, (subtotal / FREE_SHIPPING_THRESHOLD) * 100);
-    
+
     const finalSuggestions = useMemo(() => {
         const cartProductIds = new Set(cart.map(item => item.productId));
         return suggestedProducts.filter(p => !cartProductIds.has(p.id) && p.available);
     }, [cart, suggestedProducts]);
-    
+
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const intervalRef = useRef<number | null>(null);
 
@@ -1862,7 +1801,7 @@ const CartPanel: React.FC<{
             stopAutoScroll();
         };
     }, [startAutoScroll]);
-    
+
     const handleEmptyCart = () => {
         if(window.confirm('¿Estás seguro de que quieres vaciar tu carrito?')) {
             onClearCart();
@@ -1929,11 +1868,11 @@ const CartPanel: React.FC<{
                                 </div>
                             ))}
                         </div>
-                        
+
                         {finalSuggestions.length > 0 && (
                             <div className={`py-6 mt-2 ${isMenTheme ? 'bg-surface' : 'bg-surface'}`}>
                                 <h3 className="font-serif text-center text-xl mb-4">Productos que te podrían gustar</h3>
-                                <div 
+                                <div
                                     className="relative group/suggestions"
                                     onMouseEnter={stopAutoScroll}
                                     onMouseLeave={startAutoScroll}
@@ -1965,7 +1904,7 @@ const CartPanel: React.FC<{
                             </div>
                         )}
                     </div>
-                    
+
                     <div className={`p-4 border-t space-y-3 ${isMenTheme ? 'bg-black border-gray-800' : 'bg-white border-gray-200'}`}>
                          <button onClick={handleEmptyCart} className={`text-center w-full text-sm transition-colors ${isMenTheme ? 'text-gray-400 hover:text-primary' : 'text-gray-600 hover:text-primary hover:underline'}`}>Vaciar Carrito</button>
                          <div className={`flex justify-between font-bold text-lg border-t border-dashed pt-3 ${isMenTheme ? 'border-gray-700' : 'border-gray-200'}`}>
@@ -1973,7 +1912,7 @@ const CartPanel: React.FC<{
                             <span>{formatCurrency(subtotal)}</span>
                         </div>
                         <p className={`text-xs text-center ${isMenTheme ? 'text-gray-500' : 'text-gray-500'}`}>Podrás ver el costo del envío al finalizar la compra.</p>
-                        
+
                         <div className="grid grid-cols-2 gap-3">
                             <button onClick={onClose} className={`w-full py-3 text-sm font-bold border transition-colors ${isMenTheme ? 'bg-black text-white border-gray-700 hover:bg-gray-900' : 'bg-white text-primary border-primary hover:bg-pink-50'}`}>
                                 VER CARRITO
@@ -1999,9 +1938,12 @@ const ProductDetailModal: React.FC<{
     formatCurrency: (amount: number) => string,
     showToast: (message: string, type?: 'success' | 'error') => void,
     allProducts: Product[],
-    config: StoreConfig
-}> = ({ product, onClose, onAddToCart, formatCurrency, showToast, allProducts, config }) => {
+    config: StoreConfig;
+    onSelectProduct: (product: Product) => void;
+}> = ({ product, onClose, onAddToCart, formatCurrency, showToast, allProducts, config, onSelectProduct }) => {
     const [quantity, setQuantity] = useState(1);
+    const [galleryImage, setGalleryImage] = useState<string | null>(null);
+    const [showSizeGuide, setShowSizeGuide] = useState(false);
     const [selectedSize, setSelectedSize] = useState<string | undefined>(undefined);
     const [selectedColor, setSelectedColor] = useState<string | undefined>(undefined);
 
@@ -2012,6 +1954,9 @@ const ProductDetailModal: React.FC<{
     }, [allProducts, product]);
 
     useEffect(() => {
+      setQuantity(1);
+      setGalleryImage(null);
+      setShowSizeGuide(false);
       const sizes = product.variants?.sizes || {};
       const availableSizes = Object.entries(sizes).filter(([,d]: [string, ProductVariantDetail]) => d.available).map(([s]) => s);
       if (product.variants?.hasSizes && availableSizes.length > 0) setSelectedSize(availableSizes[0]);
@@ -2023,17 +1968,20 @@ const ProductDetailModal: React.FC<{
       else setSelectedColor(undefined);
     }, [product]);
 
-    const displayImage = selectedColor && product.variants?.colors?.[selectedColor]?.imageUrl
+    const displayImage = galleryImage || (selectedColor && product.variants?.colors?.[selectedColor]?.imageUrl
         ? product.variants.colors[selectedColor]!.imageUrl
-        : product.imageUrl;
-    
+        : product.imageUrl);
+
     const hasDiscount = product.discountPercentage != null && product.discountPercentage > 0;
     const discountedPrice = hasDiscount ? product.price * (1 - product.discountPercentage! / 100) : product.price;
 
+    const galleryImages = [...new Set([product.imageUrl, ...(product.additionalImages || [])].filter(Boolean))];
+    const increaseQuantity = () => setQuantity(q => Math.min(q + 1, product.stock ?? q + 1));
+    const isQuantityMax = product.stock !== undefined && quantity >= product.stock;
     const isAddToCartDisabled = !product.available || (product.variants?.hasSizes && !selectedSize) || (product.variants?.hasColors && !selectedColor);
 
     const handleShareProduct = async () => {
-        const shareUrl = `${window.location.origin}${window.location.pathname}#/product/${product.id}`;
+        const shareUrl = `${window.location.origin}/product/${encodeURIComponent(product.id)}`;
         const shareData = {
             title: product.name,
             text: `¡Mira este increíble producto de Bombon Store: ${product.name}!`,
@@ -2063,23 +2011,21 @@ const ProductDetailModal: React.FC<{
             <div className="min-h-screen flex flex-col bg-background" onClick={e => e.stopPropagation()}>
                 <div className="flex flex-col md:flex-row">
                     {/* Close Button - Floating */}
-                    <button 
-                        onClick={onClose} 
+                    <button
+                        onClick={onClose} aria-label="Cerrar producto"
                         className="fixed top-4 right-4 z-[90] p-2 text-gray-500 bg-white/80 backdrop-blur-sm hover:text-on-surface hover:bg-white rounded-full shadow-md transition-all"
                     >
                         <CloseIcon className="w-6 h-6"/>
                     </button>
 
                     {/* Left Column: Image */}
-                    <div className="w-full md:w-[60%] bg-[#f5f5f5] md:h-screen md:sticky md:top-0 flex items-center justify-center p-4 md:p-12">
+                    <div className="w-full md:w-[60%] bg-[#f5f5f5] md:h-screen md:sticky md:top-0 flex flex-col items-center justify-center p-4 md:p-12">
                         <div className="w-full h-[60vh] md:h-[80vh] flex items-center justify-center overflow-hidden">
-                            <img 
-                                src={displayImage} 
-                                alt={product.name} 
-                                className="max-w-full max-h-full object-contain transition-transform duration-500 hover:scale-105" 
-                                referrerPolicy="no-referrer"
-                            />
+                            <ProductImage src={displayImage} alt={product.name} eager className="max-w-full max-h-full object-contain transition-transform duration-500 hover:scale-105" />
                         </div>
+                        {galleryImages.length > 1 && <div className="mt-3 flex max-w-full gap-2 overflow-x-auto p-1" aria-label="Fotografías del producto">
+                            {galleryImages.map((image, index) => <button type="button" key={image} onClick={() => setGalleryImage(image)} aria-label={`Ver fotografía ${index + 1}`} aria-pressed={displayImage === image} className={`h-16 w-14 flex-shrink-0 overflow-hidden rounded border-2 ${displayImage === image ? 'border-primary' : 'border-transparent'}`}><ProductImage src={image} alt={`${product.name}, fotografía ${index + 1}`} className="h-full w-full object-cover" /></button>)}
+                        </div>}
                     </div>
 
                     {/* Right Column: Content */}
@@ -2090,8 +2036,8 @@ const ProductDetailModal: React.FC<{
                                     <h1 className="text-3xl md:text-4xl font-bold font-serif mb-2 cyber-text">{product.name}</h1>
                                     <p className="text-gray-500 text-sm uppercase tracking-widest">{product.category}</p>
                                 </div>
-                                <button 
-                                    onClick={handleShareProduct} 
+                                <button
+                                    onClick={handleShareProduct}
                                     className="p-2 text-gray-400 hover:text-primary transition-colors"
                                     title="Compartir"
                                 >
@@ -2127,7 +2073,7 @@ const ProductDetailModal: React.FC<{
                                 {/* Description */}
                                 <div>
                                     <h3 className="text-sm font-bold uppercase tracking-wider mb-3">Descripción</h3>
-                                    <p className="text-gray-600 leading-relaxed whitespace-pre-line">{product.description}</p>
+                                    <p className="text-gray-600 leading-relaxed whitespace-pre-line">{product.description || 'Pronto tendremos más detalles de esta prenda.'}</p>
                                 </div>
 
                                 {/* Variants: Sizes */}
@@ -2135,17 +2081,18 @@ const ProductDetailModal: React.FC<{
                                     <div>
                                         <div className="flex justify-between items-center mb-3">
                                             <h3 className="text-sm font-bold uppercase tracking-wider">Talla</h3>
-                                            <span className="text-xs text-gray-400">Guía de tallas</span>
+                                            {product.sizeGuideText?.trim() && <button type="button" className="text-xs text-primary underline" aria-expanded={showSizeGuide} onClick={() => setShowSizeGuide(value => !value)}>Guía de tallas</button>}
                                         </div>
+                                        {showSizeGuide && <p className="mb-3 rounded-lg bg-gray-50 p-4 text-sm whitespace-pre-line">{product.sizeGuideText}</p>}
                                         <div className="flex flex-wrap gap-3">
                                             {Object.entries(product.variants?.sizes || {}).map(([size, details]: [string, ProductVariantDetail]) => (
-                                                <button 
-                                                    key={size} 
-                                                    onClick={() => setSelectedSize(size)} 
+                                                <button
+                                                    key={size}
+                                                    onClick={() => setSelectedSize(size)}
                                                     disabled={!details.available}
                                                     className={`min-w-[3rem] h-12 flex items-center justify-center border-2 rounded-lg text-sm font-medium transition-all ${
-                                                        selectedSize === size 
-                                                            ? 'border-primary bg-primary/5 text-primary' 
+                                                        selectedSize === size
+                                                            ? 'border-primary bg-primary/5 text-primary'
                                                             : 'border-gray-100 hover:border-gray-300'
                                                     } ${!details.available ? 'opacity-30 cursor-not-allowed line-through' : ''}`}
                                                 >
@@ -2162,13 +2109,13 @@ const ProductDetailModal: React.FC<{
                                         <h3 className="text-sm font-bold uppercase tracking-wider mb-3">Color</h3>
                                         <div className="flex flex-wrap gap-3">
                                             {Object.entries(product.variants?.colors || {}).map(([color, details]: [string, ProductColorVariantDetail]) => (
-                                                <button 
-                                                    key={color} 
-                                                    onClick={() => setSelectedColor(color)} 
+                                                <button
+                                                    key={color}
+                                                    onClick={() => { setSelectedColor(color); setGalleryImage(null); }}
                                                     disabled={!details.available}
                                                     className={`group relative min-w-[4rem] h-16 flex flex-col items-center justify-center border-2 rounded-lg text-xs font-medium transition-all overflow-hidden ${
-                                                        selectedColor === color 
-                                                            ? 'border-primary bg-primary/5 text-primary' 
+                                                        selectedColor === color
+                                                            ? 'border-primary bg-primary/5 text-primary'
                                                             : 'border-gray-100 hover:border-gray-300'
                                                     } ${!details.available ? 'opacity-30 cursor-not-allowed' : ''}`}
                                                 >
@@ -2188,21 +2135,15 @@ const ProductDetailModal: React.FC<{
                                 <div>
                                     <h3 className="text-sm font-bold uppercase tracking-wider mb-3">Cantidad</h3>
                                     <div className="flex items-center w-32 border-2 border-gray-100 rounded-lg overflow-hidden">
-                                        <button 
-                                            onClick={() => setQuantity(q => Math.max(1, q - 1))} 
+                                        <button
+                                            onClick={() => setQuantity(q => Math.max(1, q - 1))}
                                             className="w-10 h-10 flex items-center justify-center hover:bg-gray-50 transition-colors"
                                         >
                                             <MinusIcon className="w-4 h-4"/>
                                         </button>
                                         <span className="flex-1 text-center font-bold">{quantity}</span>
-                                        <button 
-                                            onClick={() => setQuantity(q => {
-                                                if (product.stock !== undefined && q >= product.stock) {
-                                                    showToast(`Solo hay ${product.stock} unidades disponibles`, "error");
-                                                    return q;
-                                                }
-                                                return q + 1;
-                                            })} 
+                                        <button
+                                            onClick={increaseQuantity} disabled={isQuantityMax} aria-label="Aumentar cantidad"
                                             className="w-10 h-10 flex items-center justify-center hover:bg-gray-50 transition-colors"
                                         >
                                             <PlusIcon className="w-4 h-4"/>
@@ -2223,15 +2164,15 @@ const ProductDetailModal: React.FC<{
 
                                 {/* Desktop Add to Cart Button */}
                                 <div className="hidden md:block pt-4">
-                                    <button 
-                                        onClick={() => onAddToCart(product, quantity, selectedSize, selectedColor)} 
-                                        disabled={isAddToCartDisabled} 
+                                    <button
+                                        onClick={() => onAddToCart(product, quantity, selectedSize, selectedColor)}
+                                        disabled={isAddToCartDisabled}
                                         className="w-full bg-primary text-white py-4 rounded-xl font-bold text-lg hover:bg-primary-dark transition-all transform active:scale-[0.98] disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed shadow-lg shadow-primary/20 cyber-gradient-bg"
                                     >
                                         {product.available ? 'Agregar al Carrito' : 'Agotado'}
                                     </button>
                                     <p className="text-center text-xs text-gray-400 mt-4">
-                                        Envío gratis en pedidos superiores a $200.000
+                                        {(config.freeShippingThreshold ?? 200000) > 0 ? `Envío gratis desde ${formatCurrency(config.freeShippingThreshold ?? 200000)}` : 'El costo de envío se calcula al hacer el pedido.'}
                                     </p>
                                 </div>
                             </div>
@@ -2245,17 +2186,14 @@ const ProductDetailModal: React.FC<{
                         <h2 className="text-2xl font-bold font-serif mb-8 text-center">También te puede gustar</h2>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                             {relatedProducts.map(p => (
-                                <div key={p.id} className="group cursor-pointer" onClick={() => {
-                                    onClose();
-                                    window.location.hash = `#/product/${p.id}`;
-                                }}>
+                                <button type="button" key={p.id} className="group cursor-pointer text-left" onClick={() => onSelectProduct(p)}>
                                     <div className="aspect-[3/4] bg-gray-50 rounded-xl overflow-hidden mb-3 relative">
-                                        <img src={p.imageUrl} alt={p.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" referrerPolicy="no-referrer" />
+                                        <ProductImage src={p.imageUrl} alt={p.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
                                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
                                     </div>
                                     <h3 className="font-bold text-sm truncate">{p.name}</h3>
-                                    <p className="text-primary font-bold">{formatCurrency(p.price)}</p>
-                                </div>
+                                    <p className="text-primary font-bold">{formatCurrency(salePrice(p))}</p>
+                                </button>
                             ))}
                         </div>
                     </div>
@@ -2266,11 +2204,11 @@ const ProductDetailModal: React.FC<{
                     <div className="flex items-center border border-gray-200 rounded-lg px-2">
                         <button onClick={() => setQuantity(q => Math.max(1, q - 1))} className="p-2"><MinusIcon className="w-4 h-4"/></button>
                         <span className="w-8 text-center font-bold">{quantity}</span>
-                        <button onClick={() => setQuantity(q => q + 1)} className="p-2"><PlusIcon className="w-4 h-4"/></button>
+                        <button onClick={increaseQuantity} disabled={isQuantityMax} aria-label="Aumentar cantidad" className="p-2 disabled:opacity-40"><PlusIcon className="w-4 h-4"/></button>
                     </div>
-                    <button 
-                        onClick={() => onAddToCart(product, quantity, selectedSize, selectedColor)} 
-                        disabled={isAddToCartDisabled} 
+                    <button
+                        onClick={() => onAddToCart(product, quantity, selectedSize, selectedColor)}
+                        disabled={isAddToCartDisabled}
                         className="flex-1 bg-primary text-white py-4 rounded-xl font-bold shadow-lg shadow-primary/20 active:scale-[0.98] transition-all disabled:bg-gray-200 cyber-gradient-bg"
                     >
                         {product.available ? 'Agregar' : 'Agotado'} — {formatCurrency(discountedPrice * quantity)}
@@ -2299,7 +2237,7 @@ const InvoiceModal: React.FC<{
     const FREE_SHIPPING_THRESHOLD = config?.freeShippingThreshold !== undefined ? Number(config.freeShippingThreshold) : 200000;
     const SHIPPING_COST_BOGOTA = config?.shippingCostBogota !== undefined ? Number(config.shippingCostBogota) : (config?.shippingCostAmount !== undefined ? Number(config.shippingCostAmount) : 10000);
     const SHIPPING_COST_NATIONAL = config?.shippingCostNational !== undefined ? Number(config.shippingCostNational) : 15000;
-    
+
     const baseShippingCost = shippingDestination === 'Bogotá' ? SHIPPING_COST_BOGOTA : SHIPPING_COST_NATIONAL;
     const shippingCost = deliveryMethod === 'Envío a Domicilio' && subtotal < FREE_SHIPPING_THRESHOLD ? baseShippingCost : 0;
     const total = subtotal + shippingCost;
@@ -2323,7 +2261,7 @@ const InvoiceModal: React.FC<{
             if (color) sanitizedItem.color = color;
             return sanitizedItem as CartItem;
         });
-        
+
         const newOrderData: Omit<Order, 'docId' | 'orderNumber' | 'status' | 'date'> = {
             customerName: customerName.trim(),
             customerPhone: customerPhone.replace(/\D/g, ''),
@@ -2336,7 +2274,7 @@ const InvoiceModal: React.FC<{
             ...(deliveryMethod === 'Envío a Domicilio' && { address: `${address} (${shippingDestination})` }),
             paymentMethod,
         };
-        
+
         onSubmitOrder(newOrderData);
     };
 
@@ -2385,8 +2323,8 @@ const InvoiceModal: React.FC<{
                             </div>
                             <div>
                                <label className="block text-sm font-medium mb-1">Destino de Envío</label>
-                               <select 
-                                   value={shippingDestination} 
+                               <select
+                                   value={shippingDestination}
                                    onChange={e => setShippingDestination(e.target.value as 'Bogotá' | 'Nacional')}
                                    className="w-full bg-surface border border-gray-300 rounded-md px-3 py-2 focus:ring-primary focus:border-primary"
                                >
@@ -2453,1566 +2391,5 @@ const Footer: React.FC<{ contact: StoreConfig['contact'], social: StoreConfig['s
 );
 
 // --- ADMIN PANEL COMPONENTS ---
-
-const AdminInput = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement> & { label: string }>(
-    ({ label, ...props }, ref) => (
-    <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
-        <input ref={ref} {...props} className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary sm:text-sm disabled:bg-gray-100" />
-    </div>
-));
-
-const AdminSelect: React.FC<{
-    label: string;
-    value: string;
-    onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void;
-    options: { label: string; value: string }[];
-    className?: string;
-}> = ({ label, value, onChange, options, className = "" }) => (
-    <div className={className}>
-        <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
-        <select value={value} onChange={onChange} className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary sm:text-sm disabled:bg-gray-100">
-            {options.map((opt, idx) => (
-                <option key={idx} value={opt.value}>{opt.label}</option>
-            ))}
-        </select>
-    </div>
-);
-
-const ImageUpload: React.FC<{
-    currentImage: string;
-    onImageSelect: (url: string) => void;
-    label: string;
-}> = ({ currentImage, onImageSelect, label }) => {
-    const fileInputRef = useRef<HTMLInputElement>(null);
-    const [isUploading, setIsUploading] = useState(false);
-
-    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files && e.target.files[0]) {
-            const file = e.target.files[0];
-            setIsUploading(true);
-            try {
-                const imageUrl = await uploadImageToStorage(file);
-                onImageSelect(imageUrl);
-            } catch (error) {
-                console.error("Error uploading image:", error);
-                alert("Hubo un error al subir la imagen. Por favor, inténtalo de nuevo.");
-            } finally {
-                setIsUploading(false);
-            }
-        }
-    };
-
-    return (
-        <div>
-            <label className="block text-sm font-medium text-gray-700">{label}</label>
-            <div className="mt-1 flex items-center space-x-4">
-                <img src={currentImage || 'https://via.placeholder.com/80x100'} alt="Preview" className="w-20 h-24 rounded-md object-cover bg-gray-100" />
-                <input type="file" accept="image/*" ref={fileInputRef} onChange={handleFileChange} className="hidden" disabled={isUploading} />
-                <button 
-                  type="button" 
-                  onClick={() => fileInputRef.current?.click()} 
-                  disabled={isUploading}
-                  className="px-3 py-2 bg-white text-sm font-medium text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50 flex items-center space-x-2 disabled:bg-gray-200 disabled:cursor-wait"
-                >
-                   <UploadIcon className="w-4 h-4" />
-                   <span>{isUploading ? 'Subiendo...' : 'Cambiar'}</span>
-                </button>
-            </div>
-        </div>
-    );
-};
-
-interface AdminPanelProps {
-    user: User;
-    onClose: () => void;
-    editMode: boolean;
-    setEditMode: (isEditing: boolean) => void;
-    store: {
-        config: StoreConfig;
-        banners: Banner[];
-        menBanners: Banner[];
-        products: Product[];
-        categories: Category[];
-        orders: Order[];
-        users: User[];
-        branches: StoreBranch[];
-    };
-    onUpdateConfig: (config: StoreConfig) => void;
-    onSaveBanners: (banners: Banner[]) => void;
-    onSaveMenBanners: (banners: Banner[]) => void;
-    onSaveCategories: (categories: Category[]) => void;
-    onAddProduct: (product: Product) => void;
-    onUpdateProduct: (product: Product) => void;
-    onDeleteProduct: (productId: string) => void;
-    onBulkGenerateDescriptions: (category: string) => void;
-    formatCurrency: (amount: number) => string;
-    productToEdit: Product | null;
-    onDeleteOrder: (orderDocId: string) => void;
-    onUpdateOrder: (orderDocId: string, data: Partial<Order>) => void;
-    onLogout: () => void;
-    onAddUser: () => void;
-    onUpdateUserRole: (userDocId: string, newRole: User['role']) => void;
-    onDeleteUser: (userDocId: string) => void;
-    branches: StoreBranch[];
-}
-
-const AdminPanel: React.FC<AdminPanelProps> = (props) => {
-    const {
-        user, onClose, editMode, setEditMode,
-        onUpdateConfig, onSaveBanners, onSaveMenBanners, onSaveCategories,
-        onAddProduct, onUpdateProduct, onDeleteProduct, onBulkGenerateDescriptions,
-        formatCurrency, productToEdit, onDeleteOrder, onUpdateOrder,
-        onLogout, onAddUser, onUpdateUserRole, onDeleteUser,
-        branches
-    } = props;
-    
-    const isAdmin = user.role === 'admin';
-    const canManageProducts = user.role === 'admin' || user.role === 'vendedor';
-
-    const allTabs = ['Productos', 'Pedidos', 'Sedes', 'Usuarios', 'Categorías', 'Banners', 'General'];
-    const availableTabs = isAdmin ? allTabs : ['Productos', 'Pedidos', 'Sedes'];
-
-    const [activeTab, setActiveTab] = useState('Productos');
-    
-    const [editingProduct, setEditingProduct] = useState<Product | null>(null);
-    const [isAddingProduct, setIsAddingProduct] = useState(false);
-
-    useEffect(() => {
-        if(productToEdit && canManageProducts) {
-            setEditingProduct(productToEdit);
-            setIsAddingProduct(false);
-            setActiveTab('Productos');
-        }
-    }, [productToEdit, canManageProducts]);
-
-    const handleEditProduct = (product: Product) => {
-        setEditingProduct(product);
-        setIsAddingProduct(false);
-    };
-    
-    const handleAddNewProduct = () => {
-        const newId = `prod-${Date.now()}`;
-        const newProductTemplate: Product = {
-            id: newId,
-            name: '',
-            description: '',
-            price: 0,
-            category: (props.store.categories || [])[0] || '',
-            imageUrl: '',
-            available: true,
-            provider: '',
-            discountPercentage: 0,
-            variants: {
-                hasSizes: false, sizes: {},
-                hasColors: false, colors: {}
-            }
-        };
-        setEditingProduct(newProductTemplate);
-        setIsAddingProduct(true);
-    };
-
-    const handleCloseEditor = () => {
-        setEditingProduct(null);
-        setIsAddingProduct(false);
-    };
-
-    const handleSaveProduct = (productToSave: Product) => {
-        if (isAddingProduct) {
-            onAddProduct(productToSave);
-        } else {
-            onUpdateProduct(productToSave);
-        }
-        handleCloseEditor();
-    };
-
-    const renderContent = () => {
-        if (editingProduct && canManageProducts) {
-            return <ProductEditor 
-                key={editingProduct.id}
-                product={editingProduct}
-                categories={props.store.categories}
-                onSave={handleSaveProduct}
-                onCancel={handleCloseEditor}
-                onDelete={onDeleteProduct}
-                isNewProduct={isAddingProduct}
-            />;
-        }
-
-        switch (activeTab) {
-            case 'Productos':
-                return <AdminProductsTab 
-                            products={props.store.products}
-                            categories={props.store.categories}
-                            onEdit={handleEditProduct}
-                            onAdd={handleAddNewProduct}
-                            onDelete={onDeleteProduct}
-                            onBulkGenerateDescriptions={onBulkGenerateDescriptions}
-                            formatCurrency={formatCurrency}
-                            canManageProducts={canManageProducts}
-                        />;
-            case 'Categorías':
-                return isAdmin ? <AdminCategoriesTab 
-                            categories={props.store.categories}
-                            products={props.store.products}
-                            onUpdateProduct={onUpdateProduct}
-                            onSave={onSaveCategories}
-                        /> : null;
-            case 'Banners':
-                return isAdmin ? <AdminBannersTab 
-                            banners={props.store.banners}
-                            menBanners={props.store.menBanners}
-                            categories={props.store.categories}
-                            onSaveBanners={onSaveBanners}
-                            onSaveMenBanners={onSaveMenBanners}
-                        /> : null;
-            case 'General':
-                return isAdmin ? <AdminGeneralTab
-                            config={props.store.config}
-                            onSave={onUpdateConfig}
-                        /> : null;
-            case 'Pedidos':
-                return <AdminOrdersTab 
-                            user={user}
-                            orders={props.store.orders}
-                            formatCurrency={formatCurrency}
-                            onDelete={onDeleteOrder}
-                            onUpdate={onUpdateOrder}
-                        />;
-            case 'Sedes':
-                return <AdminBranchesTab branches={branches} />;
-            case 'Usuarios':
-                return isAdmin ? <AdminUsersTab 
-                            users={props.store.users}
-                            onAdd={onAddUser}
-                            onUpdateRole={onUpdateUserRole}
-                            onDelete={onDeleteUser}
-                            currentUserId={user.uid}
-                        /> : null;
-            default:
-                return null;
-        }
-    };
-
-    return (
-        <div className="fixed inset-0 bg-black/60 z-[80] flex" onClick={onClose}>
-            <div className="bg-gray-100 w-full max-w-7xl h-full flex shadow-xl" onClick={e => e.stopPropagation()}>
-                <div className="w-64 bg-gray-800 text-white flex flex-col">
-                    <div className="p-4 border-b border-gray-700">
-                        <h2 className="text-xl font-bold">Panel de Admin</h2>
-                        <p className="text-sm text-gray-400 capitalize">{user.role}</p>
-                        <p className="text-xs text-gray-500 truncate">{user.email}</p>
-                        {canManageProducts && (
-                            <label htmlFor="editModeToggle" className="flex items-center space-x-2 mt-4 cursor-pointer">
-                                <input id="editModeToggle" type="checkbox" checked={editMode} onChange={(e) => setEditMode(e.target.checked)} className="w-4 h-4 text-primary bg-gray-700 border-gray-600 rounded focus:ring-primary"/>
-                                 <span className="text-sm">Edición Rápida</span>
-                            </label>
-                        )}
-                    </div>
-                    <nav className="flex-grow p-2">
-                        {availableTabs.map(tab => (
-                            <button
-                                key={tab}
-                                onClick={() => { setActiveTab(tab); handleCloseEditor(); }}
-                                className={`w-full text-left px-4 py-2.5 rounded-md text-sm font-medium transition-colors ${activeTab === tab ? 'bg-primary text-white' : 'hover:bg-gray-700'}`}
-                            >{tab}</button>
-                        ))}
-                    </nav>
-                     <div className="p-4 border-t border-gray-700 space-y-2">
-                        <button onClick={onLogout} className="w-full text-left px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-700">Cerrar Sesión</button>
-                        <button onClick={onClose} className="w-full text-left px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-700">Cerrar Panel</button>
-                    </div>
-                </div>
-                <div className="flex-grow h-full overflow-y-auto bg-white">{renderContent()}</div>
-            </div>
-        </div>
-    );
-};
-
-const AdminProductsTab: React.FC<{
-    products: Product[],
-    categories: Category[],
-    onEdit: (p: Product) => void,
-    onAdd: () => void,
-    onDelete: (id: string) => void,
-    onBulkGenerateDescriptions: (category: string) => void,
-    formatCurrency: (n: number) => string,
-    canManageProducts: boolean
-}> = ({ products, categories, onEdit, onAdd, onDelete, onBulkGenerateDescriptions, formatCurrency, canManageProducts }) => {
-    const [activeFilter, setActiveFilter] = useState('All');
-    const [isBulkGenerating, setIsBulkGenerating] = useState(false);
-
-    const handleBulkGenerate = async () => {
-        if (activeFilter === 'All') {
-            alert("Por favor, selecciona una categoría específica para generar descripciones masivas.");
-            return;
-        }
-        setIsBulkGenerating(true);
-        await onBulkGenerateDescriptions(activeFilter);
-        setIsBulkGenerating(false);
-    };
-
-    const categoryCounts = useMemo(() => {
-        const counts = new Map<string, number>();
-        for (const cat of categories) {
-            counts.set(cat, 0);
-        }
-        for (const product of products) {
-            counts.set(product.category, (counts.get(product.category) || 0) + 1);
-        }
-        return counts;
-    }, [products, categories]);
-    
-    const filteredDisplayProducts = useMemo(() => {
-        if (activeFilter === 'All') {
-            return products;
-        }
-        return products.filter(p => p.category === activeFilter);
-    }, [products, activeFilter]);
-    
-    return (
-        <div className="p-6">
-            <div className="flex justify-between items-center mb-4">
-                <h1 className="text-2xl font-bold">Productos</h1>
-                <div className="flex gap-2">
-                    {activeFilter !== 'All' && canManageProducts && (
-                        <button 
-                            onClick={handleBulkGenerate} 
-                            disabled={isBulkGenerating}
-                            className="bg-secondary text-white px-4 py-2 rounded-md hover:bg-secondary-dark disabled:opacity-50 flex items-center gap-2"
-                        >
-                            {isBulkGenerating ? 'Generando...' : '✨ IA: Describir Categoría'}
-                        </button>
-                    )}
-                    {canManageProducts && <button onClick={onAdd} className="bg-primary text-white px-4 py-2 rounded-md hover:bg-primary-dark">Agregar Producto</button>}
-                </div>
-            </div>
-             <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-                <h3 className="font-semibold text-gray-700 mb-2">Filtrar por Categoría</h3>
-                <div className="flex flex-wrap gap-2">
-                    <button
-                        onClick={() => setActiveFilter('All')}
-                        className={`px-3 py-1.5 rounded-md text-sm transition-colors ${activeFilter === 'All' ? 'bg-primary text-white font-semibold' : 'bg-white border border-gray-200 hover:bg-pink-50'}`}
-                    >
-                        Todos <span className="text-xs opacity-75 ml-1">({products.length})</span>
-                    </button>
-                    {Array.from(categoryCounts.entries()).map(([category, count]) => (
-                         <button
-                            key={category}
-                            onClick={() => setActiveFilter(category)}
-                            className={`px-3 py-1.5 rounded-md text-sm transition-colors ${activeFilter === category ? 'bg-primary text-white font-semibold' : 'bg-white border border-gray-200 hover:bg-pink-50'}`}
-                        >
-                            {category} <span className="text-xs opacity-75 ml-1">({count})</span>
-                        </button>
-                    ))}
-                </div>
-            </div>
-            <div className="bg-white rounded-lg shadow overflow-hidden">
-                {/* Mobile View: Card List */}
-                <div className="md:hidden divide-y divide-gray-200">
-                    {filteredDisplayProducts.length === 0 && (
-                        <div className="text-center py-8 text-gray-500">No hay productos en esta categoría.</div>
-                    )}
-                    {filteredDisplayProducts.map(p => (
-                        <div key={p.id} className="p-4 space-y-3">
-                            <div className="flex items-center space-x-4">
-                                <img src={p.imageUrl} alt={p.name} className="w-16 h-20 object-cover rounded-md" />
-                                <div className="flex-grow min-w-0">
-                                    <h3 className="text-sm font-bold text-gray-900 truncate">{p.name}</h3>
-                                    <p className="text-xs text-gray-500">{p.category}</p>
-                                    <p className="text-sm font-semibold text-primary">{formatCurrency(p.price)}</p>
-                                </div>
-                                <div className="flex flex-col items-end space-y-2">
-                                    <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${p.available ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                                        {p.available ? 'DISPONIBLE' : 'AGOTADO'}
-                                    </span>
-                                </div>
-                            </div>
-                            {canManageProducts && (
-                                <div className="flex gap-2 pt-2 border-t border-gray-100">
-                                    <button onClick={() => onEdit(p)} className="flex-1 bg-primary/10 text-primary font-bold py-2 rounded-md text-xs">EDITAR</button>
-                                    <button onClick={() => onDelete(p.id)} className="flex-1 bg-red-50 text-red-600 font-bold py-2 rounded-md text-xs">ELIMINAR</button>
-                                </div>
-                            )}
-                        </div>
-                    ))}
-                </div>
-
-                {/* Desktop View: Table */}
-                <table className="hidden md:table w-full">
-                    <thead className="bg-gray-50">
-                        <tr>
-                            <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Imagen</th>
-                            <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nombre</th>
-                            <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Categoría</th>
-                            <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Precio</th>
-                            <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Disponibilidad</th>
-                            {canManageProducts && <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>}
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200">
-                         {filteredDisplayProducts.length === 0 && (
-                            <tr>
-                                <td colSpan={canManageProducts ? 6 : 5} className="text-center py-8 text-gray-500">
-                                    No hay productos en esta categoría.
-                                </td>
-                            </tr>
-                        )}
-                        {filteredDisplayProducts.map(p => (
-                            <tr key={p.id}>
-                                <td className="p-3"><img src={p.imageUrl} alt={p.name} className="w-12 h-16 object-cover rounded-md" /></td>
-                                <td className="p-3 text-sm font-medium text-gray-900">{p.name}</td>
-                                <td className="p-3 text-sm text-gray-500">{p.category}</td>
-                                <td className="p-3 text-sm text-gray-500">{formatCurrency(p.price)}</td>
-                                <td className="p-3"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${p.available ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{p.available ? 'Sí' : 'No'}</span></td>
-                                {canManageProducts && (
-                                    <td className="p-3 text-sm space-x-2">
-                                        <button onClick={() => onEdit(p)} className="text-primary hover:text-primary-dark">Editar</button>
-                                        <button onClick={() => onDelete(p.id)} className="text-red-600 hover:text-red-800">Eliminar</button>
-                                    </td>
-                                )}
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    );
-};
-
-
-const AdminCategoriesTab: React.FC<{
-    categories: Category[], 
-    products: Product[],
-    onUpdateProduct: (p: Product) => void,
-    onSave: (cats: Category[]) => void
-}> = ({ categories, products, onUpdateProduct, onSave }) => {
-    const [localCategories, setLocalCategories] = useState(categories || []);
-    const [newCat, setNewCat] = useState('');
-    const [managedSpecial, setManagedSpecial] = useState<'featured' | 'newArrival' | null>(null);
-    const [searchTerm, setSearchTerm] = useState('');
-    
-    useEffect(() => {
-        setLocalCategories(categories || []);
-    }, [categories]);
-
-    const handleAdd = () => {
-        if (newCat && !localCategories.includes(newCat)) {
-            setLocalCategories([...localCategories, newCat]);
-            setNewCat('');
-        }
-    };
-    const handleRemove = (catToRemove: string) => {
-        setLocalCategories(localCategories.filter(c => c !== catToRemove));
-    };
-    const handleSave = () => onSave(localCategories);
-
-    const toggleSpecial = (product: Product) => {
-        if (!managedSpecial) return;
-        const field = managedSpecial === 'featured' ? 'isFeatured' : 'isNewArrival';
-        onUpdateProduct({
-            ...product,
-            [field]: !product[field]
-        });
-    };
-
-    const filteredProducts = products.filter(p => 
-        p.name.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-
-    if (managedSpecial) {
-        const title = managedSpecial === 'featured' ? 'En Tendencia (⭐)' : 'Recién Llegados (🆕)';
-        const field = managedSpecial === 'featured' ? 'isFeatured' : 'isNewArrival';
-
-        return (
-            <div className="p-6">
-                <div className="flex items-center gap-4 mb-6">
-                    <button onClick={() => setManagedSpecial(null)} className="p-2 hover:bg-gray-100 rounded-full">
-                        <ArrowLeftIcon className="w-5 h-5" />
-                    </button>
-                    <h1 className="text-2xl font-bold">Editar {title}</h1>
-                </div>
-
-                <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-100">
-                    <div className="flex items-center gap-4 mb-6">
-                        <div className="relative flex-1">
-                            <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                            <input 
-                                type="text" 
-                                placeholder="Buscar productos..." 
-                                value={searchTerm}
-                                onChange={e => setSearchTerm(e.target.value)}
-                                className="w-full pl-10 pr-4 py-2 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-primary/20 text-sm"
-                            />
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-[60vh] overflow-y-auto pr-2">
-                        {filteredProducts.map(product => (
-                            <div 
-                                key={product.id} 
-                                onClick={() => toggleSpecial(product)}
-                                className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-all cursor-pointer ${
-                                    product[field] 
-                                    ? 'border-primary bg-primary/5' 
-                                    : 'border-gray-100 hover:border-gray-200 bg-white'
-                                }`}
-                            >
-                                <img src={product.imageUrl} alt={product.name} className="w-12 h-12 object-cover rounded-lg" referrerPolicy="no-referrer" />
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-bold truncate">{product.name}</p>
-                                    <p className="text-xs text-gray-500">{product.category}</p>
-                                </div>
-                                <div className={`w-6 h-6 rounded-full flex items-center justify-center border-2 ${
-                                    product[field] ? 'bg-primary border-primary' : 'border-gray-200'
-                                }`}>
-                                    {product[field] && <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"/></svg>}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            </div>
-        );
-    }
-    
-    return (
-        <div className="p-6">
-            <h1 className="text-2xl font-bold mb-6">Categorías</h1>
-            
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                {/* Standard Categories */}
-                <div className="bg-white rounded-3xl shadow-xl p-8 border border-gray-100">
-                    <h2 className="text-lg font-bold mb-6 flex items-center gap-2">
-                        <MenuIcon className="w-5 h-5 text-gray-400" />
-                        Categorías del Menú
-                    </h2>
-                    <div className="flex space-x-2 mb-6">
-                        <div className="flex-1">
-                            <AdminInput label="" type="text" value={newCat} onChange={e => setNewCat(e.target.value)} placeholder="Nueva categoría..." />
-                        </div>
-                        <button onClick={handleAdd} className="bg-primary text-white px-6 py-2 rounded-xl hover:scale-105 transition-all whitespace-nowrap self-end">Agregar</button>
-                    </div>
-                    <div className="space-y-3">
-                        {localCategories.map(cat => (
-                            <div key={cat} className="flex justify-between items-center p-4 bg-gray-50 hover:bg-gray-100 rounded-2xl transition-colors group">
-                                <span className="font-medium">{cat}</span>
-                                <button onClick={() => handleRemove(cat)} className="text-red-400 hover:text-red-600 p-2 hover:bg-white rounded-full transition-all">
-                                    <TrashIcon className="w-5 h-5"/>
-                                </button>
-                            </div>
-                        ))}
-                    </div>
-                    <button onClick={handleSave} className="mt-8 w-full bg-green-500 text-white px-4 py-3 rounded-2xl font-bold hover:shadow-lg transition-all">Guardar Orden y Cambios</button>
-                </div>
-
-                {/* Special Dynamic Categories */}
-                <div className="space-y-6">
-                    <div className="bg-white rounded-3xl shadow-xl p-8 border border-gray-100">
-                        <h2 className="text-lg font-bold mb-6">Secciones Especiales</h2>
-                        <p className="text-sm text-gray-500 mb-6 italic">Estas secciones aparecen en la página de inicio y se basan en etiquetas personalizadas.</p>
-                        
-                        <div className="grid gap-4">
-                            <button 
-                                onClick={() => setManagedSpecial('featured')}
-                                className="flex items-center justify-between p-6 bg-gradient-to-r from-orange-50 to-amber-50 rounded-3xl border border-orange-100 hover:shadow-md transition-all group"
-                            >
-                                <div className="flex items-center gap-4 text-left">
-                                    <div className="text-3xl">⭐</div>
-                                    <div>
-                                        <p className="font-bold text-orange-900">En Tendencia</p>
-                                        <p className="text-xs text-orange-700">{products.filter(p => p.isFeatured).length} productos etiquetados</p>
-                                    </div>
-                                </div>
-                                <ArrowLeftIcon className="w-5 h-5 text-orange-400 rotate-180 group-hover:translate-x-1 transition-transform" />
-                            </button>
-
-                            <button 
-                                onClick={() => setManagedSpecial('newArrival')}
-                                className="flex items-center justify-between p-6 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-3xl border border-blue-100 hover:shadow-md transition-all group"
-                            >
-                                <div className="flex items-center gap-4 text-left">
-                                    <div className="text-3xl">🆕</div>
-                                    <div>
-                                        <p className="font-bold text-blue-900">Recién Llegados</p>
-                                        <p className="text-xs text-blue-700">{products.filter(p => p.isNewArrival).length} productos etiquetados</p>
-                                    </div>
-                                </div>
-                                <ArrowLeftIcon className="w-5 h-5 text-blue-400 rotate-180 group-hover:translate-x-1 transition-transform" />
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="bg-primary/10 p-8 rounded-3xl border border-primary/20">
-                        <h3 className="font-bold text-primary mb-2">Consejo Técnico</h3>
-                        <p className="text-sm text-primary/80 leading-relaxed">
-                            A diferencia de las categorías fijas, estas secciones son <strong>Dinámicas</strong>. 
-                            Puedes cambiar qué productos aparecen aquí sin moverlos de su categoría principal.
-                        </p>
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-const AdminBannersTab: React.FC<{
-    banners: Banner[], 
-    menBanners: Banner[],
-    categories: Category[],
-    onSaveBanners: (b: Banner[]) => void,
-    onSaveMenBanners: (b: Banner[]) => void
-}> = ({ banners, menBanners, categories, onSaveBanners, onSaveMenBanners }) => {
-    const [localBanners, setLocalBanners] = useState<Banner[]>(banners || []);
-    const [localMenBanners, setLocalMenBanners] = useState<Banner[]>(menBanners || []);
-    
-    useEffect(() => {
-        setLocalBanners(banners || []);
-    }, [banners]);
-
-    useEffect(() => {
-        setLocalMenBanners(menBanners || []);
-    }, [menBanners]);
-
-    const updateBanner = (id: number, field: keyof Omit<Banner, 'id'>, value: string, isMen: boolean) => {
-        if (isMen) {
-            setLocalMenBanners(localMenBanners.map(b => b.id === id ? { ...b, [field]: value } : b));
-        } else {
-            setLocalBanners(localBanners.map(b => b.id === id ? { ...b, [field]: value } : b));
-        }
-    };
-    const addBanner = (isMen: boolean) => {
-        const newBanner: Banner = { id: Date.now(), imageUrl: '', title: '', subtitle: '', link: '#' };
-        if (isMen) {
-            setLocalMenBanners([...localMenBanners, newBanner]);
-        } else {
-            setLocalBanners([...localBanners, newBanner]);
-        }
-    };
-    const removeBanner = (id: number, isMen: boolean) => {
-        if (isMen) {
-            setLocalMenBanners(localMenBanners.filter(b => b.id !== id));
-        } else {
-            setLocalBanners(localBanners.filter(b => b.id !== id));
-        }
-    };
-
-    const linkOptions = [
-        { label: 'Elegir destino...', value: '' },
-        { label: 'Todos los productos', value: '#productos' },
-        ...categories.map(cat => ({ label: `Categoría: ${cat}`, value: `category:${cat}` }))
-    ];
-
-    return (
-         <div className="p-6 space-y-12">
-            {/* Standard Banners */}
-            <div>
-                <div className="flex justify-between items-center mb-6">
-                    <h1 className="text-2xl font-bold">Banners Principales (Bombon)</h1>
-                    <div>
-                        <button onClick={() => addBanner(false)} className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 mr-2">Agregar Banner</button>
-                        <button onClick={() => onSaveBanners(localBanners)} className="bg-green-500 text-white px-4 py-2 rounded-md hover:bg-green-600">Guardar Banners</button>
-                    </div>
-                </div>
-                <div className="space-y-6">
-                    {localBanners.map(banner => (
-                        <div key={banner.id} className="bg-white rounded-lg shadow p-4 grid grid-cols-1 md:grid-cols-3 gap-4 relative">
-                            <ImageUpload label="Imagen del Banner" currentImage={banner.imageUrl} onImageSelect={url => updateBanner(banner.id, 'imageUrl', url, false)} />
-                            <div className="md:col-span-2 space-y-4">
-                                <AdminInput label="Título" value={banner.title} onChange={e => updateBanner(banner.id, 'title', e.target.value, false)} />
-                                <AdminInput label="Subtítulo" value={banner.subtitle} onChange={e => updateBanner(banner.id, 'subtitle', e.target.value, false)} />
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    <AdminInput label="Enlace Manual" value={banner.link} onChange={e => updateBanner(banner.id, 'link', e.target.value, false)} placeholder="Ej: #productos"/>
-                                    <AdminSelect 
-                                        label="Conectar a Categoría" 
-                                        value={banner.link.startsWith('category:') ? banner.link : ''} 
-                                        onChange={e => e.target.value && updateBanner(banner.id, 'link', e.target.value, false)}
-                                        options={linkOptions}
-                                    />
-                                </div>
-                                <p className="text-xs text-gray-400">Actual: {banner.link}</p>
-                            </div>
-                            <button onClick={() => removeBanner(banner.id, false)} className="absolute top-2 right-2 text-red-500 hover:text-red-700"><TrashIcon className="w-5 h-5"/></button>
-                        </div>
-                    ))}
-                </div>
-            </div>
-
-            {/* Men Banners */}
-            <div>
-                <div className="flex justify-between items-center mb-6">
-                    <h1 className="text-2xl font-bold">Banners Hombre (Street Legends)</h1>
-                    <div>
-                        <button onClick={() => addBanner(true)} className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 mr-2">Agregar Banner</button>
-                        <button onClick={() => onSaveMenBanners(localMenBanners)} className="bg-green-500 text-white px-4 py-2 rounded-md hover:bg-green-600">Guardar Banners</button>
-                    </div>
-                </div>
-                <div className="space-y-6">
-                    {localMenBanners.map(banner => (
-                        <div key={banner.id} className="bg-black text-white rounded-lg shadow p-4 grid grid-cols-1 md:grid-cols-3 gap-4 relative border border-gray-800">
-                            <ImageUpload label="Imagen del Banner" currentImage={banner.imageUrl} onImageSelect={url => updateBanner(banner.id, 'imageUrl', url, true)} />
-                            <div className="md:col-span-2 space-y-4">
-                                <AdminInput label="Título" value={banner.title} onChange={e => updateBanner(banner.id, 'title', e.target.value, true)} />
-                                <AdminInput label="Subtítulo" value={banner.subtitle} onChange={e => updateBanner(banner.id, 'subtitle', e.target.value, true)} />
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    <AdminInput label="Enlace Manual" value={banner.link} onChange={e => updateBanner(banner.id, 'link', e.target.value, true)} placeholder="Ej: #productos"/>
-                                    <AdminSelect 
-                                        label="Conectar a Categoría" 
-                                        value={banner.link.startsWith('category:') ? banner.link : ''} 
-                                        onChange={e => e.target.value && updateBanner(banner.id, 'link', e.target.value, true)}
-                                        options={linkOptions}
-                                    />
-                                </div>
-                                <p className="text-xs text-gray-600">Actual: {banner.link}</p>
-                            </div>
-                            <button onClick={() => removeBanner(banner.id, true)} className="absolute top-2 right-2 text-red-500 hover:text-red-700"><TrashIcon className="w-5 h-5"/></button>
-                        </div>
-                    ))}
-                </div>
-            </div>
-        </div>
-    );
-};
-
-const AdminGeneralTab: React.FC<{config: StoreConfig, onSave: (c: StoreConfig) => Promise<void> | void}> = ({ config, onSave }) => {
-    const [localConfig, setLocalConfig] = useState(config);
-    const [isSaving, setIsSaving] = useState(false);
-    const [saveError, setSaveError] = useState('');
-    const [otherCompany, setOtherCompany] = useState(catalogCompany(config) !== DEFAULT_COMPANY_ID);
-
-    useEffect(() => {
-        setLocalConfig(config);
-        setOtherCompany(catalogCompany(config) !== DEFAULT_COMPANY_ID);
-    }, [config]);
-
-    const handleSave = async () => {
-        setIsSaving(true);
-        setSaveError('');
-        try {
-            if (otherCompany && !localConfig.inventoryCompanyId?.trim()) throw new Error('Ingresa el identificador de la empresa.');
-            await onSave({ ...localConfig, inventoryCompanyId: catalogCompany(localConfig) });
-        } catch (error) {
-            setSaveError(error instanceof Error ? error.message : 'No se pudo guardar la configuración.');
-        } finally {
-            setIsSaving(false);
-        }
-    };
-    
-    return (
-        <div className="p-6">
-            <h1 className="text-2xl font-bold mb-6">Configuración General</h1>
-            <div className="bg-white rounded-lg shadow p-6 max-w-2xl space-y-6">
-                <div className="rounded-lg border border-pink-200 bg-pink-50 p-4 space-y-3">
-                    <h2 className="font-semibold">Empresa del catálogo</h2>
-                    <label htmlFor="catalog-company" className="block text-sm">Productos que se muestran en esta tienda</label>
-                    <select id="catalog-company" value={otherCompany ? 'custom' : DEFAULT_COMPANY_ID} onChange={e => { setOtherCompany(e.target.value === 'custom'); setLocalConfig({ ...localConfig, inventoryCompanyId: e.target.value === DEFAULT_COMPANY_ID ? DEFAULT_COMPANY_ID : '' }); }} className="w-full bg-white border rounded-md px-3 py-2">
-                        <option value={DEFAULT_COMPANY_ID}>Bombón y Street Legends</option>
-                        <option value="custom">Otra empresa de Vestika</option>
-                    </select>
-                    <AdminInput disabled={!otherCompany} label="Identificador de empresa en Vestika" value={localConfig.inventoryCompanyId ?? DEFAULT_COMPANY_ID} onChange={e => setLocalConfig({ ...localConfig, inventoryCompanyId: e.target.value })} placeholder="default_company" />
-                    <p className="text-xs text-gray-600">La configuración inicial corresponde a Bombón y Street Legends. Para conectar otra empresa, copia su identificador desde Vestika y guarda los cambios.</p>
-                </div>
-                {saveError && <p role="alert" className="text-sm text-red-700">{saveError}</p>}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <ImageUpload key={`logo-${localConfig.logoUrl}`} label="Logo Bombon (Principal)" currentImage={localConfig.logoUrl} onImageSelect={url => setLocalConfig({...localConfig, logoUrl: url})} />
-                    <ImageUpload key={`second-logo-${localConfig.secondLogoUrl}`} label="Logo Street Legends (Hombre)" currentImage={localConfig.secondLogoUrl || ''} onImageSelect={url => setLocalConfig({...localConfig, secondLogoUrl: url})} />
-                </div>
-                <ImageUpload 
-                    label="Imagen de Medios de Pago (Carrito)" 
-                    currentImage={localConfig.paymentMethodsImageUrl || ''} 
-                    onImageSelect={url => setLocalConfig({...localConfig, paymentMethodsImageUrl: url})} 
-                />
-                <AdminInput label="Nombre de la Tienda" value={localConfig.contact.name} onChange={e => setLocalConfig({...localConfig, contact: {...localConfig.contact, name: e.target.value}})} />
-                <AdminInput label="Teléfono de Contacto" value={localConfig.contact.phone} onChange={e => setLocalConfig({...localConfig, contact: {...localConfig.contact, phone: e.target.value}})} />
-                <AdminInput label="Horario" value={localConfig.contact.schedule} onChange={e => setLocalConfig({...localConfig, contact: {...localConfig.contact, schedule: e.target.value}})} />
-                <AdminInput label="Instagram (URL completa)" value={localConfig.social.instagram} onChange={e => setLocalConfig({...localConfig, social: {...localConfig.social, instagram: e.target.value}})} />
-                <AdminInput label="TikTok (URL completa)" value={localConfig.social.tiktok} onChange={e => setLocalConfig({...localConfig, social: {...localConfig.social, tiktok: e.target.value}})} />
-                <AdminInput label="WhatsApp (con cód. país)" value={localConfig.social.whatsapp} onChange={e => setLocalConfig({...localConfig, social: {...localConfig.social, whatsapp: e.target.value}})} />
-                
-                {/* Costos de Envío y Domicilio */}
-                <div className="border-t border-gray-200 pt-6 space-y-4">
-                    <h3 className="text-lg font-semibold text-gray-800">Costos de Envío</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <AdminInput 
-                            label="Costo de Envío a Bogotá ($ COP)" 
-                            type="number"
-                            value={localConfig.shippingCostBogota !== undefined ? localConfig.shippingCostBogota : (localConfig.shippingCostAmount !== undefined ? localConfig.shippingCostAmount : '')} 
-                            onChange={e => setLocalConfig({
-                                ...localConfig, 
-                                shippingCostBogota: e.target.value !== '' ? Number(e.target.value) : undefined
-                            })} 
-                        />
-                        <AdminInput 
-                            label="Costo de Envío Nacional ($ COP)" 
-                            type="number"
-                            value={localConfig.shippingCostNational !== undefined ? localConfig.shippingCostNational : ''} 
-                            onChange={e => setLocalConfig({
-                                ...localConfig, 
-                                shippingCostNational: e.target.value !== '' ? Number(e.target.value) : undefined
-                            })} 
-                        />
-                        <div className="md:col-span-2">
-                            <AdminInput 
-                                label="Mínimo de Compra para Envío Gratis ($ COP)" 
-                                type="number"
-                                value={localConfig.freeShippingThreshold !== undefined ? localConfig.freeShippingThreshold : ''} 
-                                onChange={e => setLocalConfig({...localConfig, freeShippingThreshold: e.target.value !== '' ? Number(e.target.value) : undefined})} 
-                            />
-                        </div>
-                    </div>
-                </div>
-                
-                {/* Banner de Anuncios Superior */}
-                <div className="border-t border-gray-200 pt-6 space-y-4">
-                    <h3 className="text-lg font-semibold text-gray-800">Banner de Anuncios (Cintillo Superior Rotativo)</h3>
-                    <p className="text-xs text-gray-500">Un banner con auto-desplazamiento ubicado en la parte superior de la página para mostrar varias promociones o mensajes.</p>
-                    
-                    <div className="flex items-center space-x-2 bg-gray-50 p-3 rounded-lg">
-                        <input 
-                            type="checkbox" 
-                            id="showAnnouncements" 
-                            checked={localConfig.showAnnouncements !== false}
-                            onChange={e => setLocalConfig({...localConfig, showAnnouncements: e.target.checked})}
-                            className="rounded border-gray-300 text-primary focus:ring-primary h-4 w-4"
-                        />
-                        <label htmlFor="showAnnouncements" className="text-sm font-medium text-gray-700 cursor-pointer">
-                            Activar banner de anuncios rotativo
-                        </label>
-                    </div>
-
-                    {localConfig.showAnnouncements !== false && (
-                        <div className="space-y-3">
-                            <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest pl-1">
-                                Mensajes Promocionales
-                            </label>
-                            
-                            {(localConfig.announcements || []).map((ann, idx) => (
-                                <div key={idx} className="flex space-x-2 items-center">
-                                    <input 
-                                        type="text" 
-                                        value={ann} 
-                                        onChange={e => {
-                                            const updatedAnns = [...(localConfig.announcements || [])];
-                                            updatedAnns[idx] = e.target.value;
-                                            setLocalConfig({...localConfig, announcements: updatedAnns});
-                                        }}
-                                        className="flex-1 bg-gray-50 border border-gray-200 rounded-lg py-2 px-4 focus:ring-2 focus:ring-primary/20 outline-none text-sm"
-                                        placeholder="Ej: ✨ ¡Envío GRATIS por compras superiores a $200.000!"
-                                    />
-                                    <button 
-                                        type="button"
-                                        onClick={() => {
-                                            const updatedAnns = (localConfig.announcements || []).filter((_, i) => i !== idx);
-                                            setLocalConfig({...localConfig, announcements: updatedAnns});
-                                        }}
-                                        className="text-red-500 hover:text-red-700 p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                                        title="Eliminar mensaje"
-                                    >
-                                        <TrashIcon className="w-5 h-5" />
-                                    </button>
-                                </div>
-                            ))}
-
-                            {(!localConfig.announcements || localConfig.announcements.length === 0) && (
-                                <p className="text-sm text-gray-400 italic pl-1">No hay mensajes configurados. Agrega uno abajo.</p>
-                            )}
-
-                            <button 
-                                type="button"
-                                onClick={() => {
-                                    const currentAnnouncements = localConfig.announcements || [];
-                                    setLocalConfig({
-                                        ...localConfig, 
-                                        announcements: [...currentAnnouncements, '']
-                                    });
-                                }}
-                                className="text-xs text-blue-600 hover:text-blue-800 font-bold flex items-center space-x-1 mt-2 bg-blue-50 hover:bg-blue-100 px-3 py-2 rounded-lg transition-colors inline-flex"
-                            >
-                                <PlusIcon className="w-4 h-4" />
-                                <span>Agregar Nuevo Mensaje</span>
-                            </button>
-                        </div>
-                    )}
-                </div>
-                
-                <button 
-                    onClick={handleSave} 
-                    disabled={isSaving}
-                    className="mt-4 w-full bg-green-500 text-white px-4 py-2 rounded-md hover:bg-green-600 disabled:bg-gray-400 flex items-center justify-center space-x-2"
-                >
-                    {isSaving && (
-                        <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                    )}
-                    <span>{isSaving ? 'Guardando...' : 'Guardar Configuración'}</span>
-                </button>
-            </div>
-        </div>
-    );
-};
-
-const AdminUsersTab: React.FC<{
-    users: User[];
-    onAdd: () => void;
-    onUpdateRole: (docId: string, newRole: User['role']) => void;
-    onDelete: (docId: string) => void;
-    currentUserId: string;
-}> = ({ users, onAdd, onUpdateRole, onDelete, currentUserId }) => {
-    return (
-        <div className="p-6">
-             <div className="flex justify-between items-center mb-6">
-                <h1 className="text-2xl font-bold">Gestionar Usuarios</h1>
-                <button onClick={onAdd} className="bg-primary text-white px-4 py-2 rounded-md hover:bg-primary-dark">Agregar Usuario</button>
-            </div>
-            <div className="bg-white rounded-lg shadow overflow-hidden">
-                <table className="w-full">
-                    <thead className="bg-gray-50">
-                        <tr>
-                            <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Correo Electrónico</th>
-                            <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rol</th>
-                            <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200">
-                        {(users || []).map(user => (
-                            <tr key={user.docId}>
-                                <td className="p-3 text-sm font-medium text-gray-900">{user.email}</td>
-                                <td className="p-3 text-sm text-gray-500">
-                                    <select
-                                        value={user.role}
-                                        onChange={(e) => onUpdateRole(user.docId, e.target.value as User['role'])}
-                                        disabled={user.uid === currentUserId} // Admin can't change their own role
-                                        className="bg-white border border-gray-300 rounded-md px-2 py-1 text-sm focus:ring-primary focus:border-primary disabled:bg-gray-100 disabled:cursor-not-allowed"
-                                    >
-                                        <option value="admin">Administrador</option>
-                                        <option value="vendedor">Vendedor</option>
-                                    </select>
-                                </td>
-                                <td className="p-3 text-sm">
-                                    <button
-                                        onClick={() => onDelete(user.docId)}
-                                        disabled={user.uid === currentUserId} // Admin can't delete themselves
-                                        className="text-red-600 hover:text-red-800 disabled:text-gray-400 disabled:cursor-not-allowed"
-                                    >
-                                        Eliminar
-                                    </button>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    );
-};
-
-const AdminBranchesTab: React.FC<{ branches: StoreBranch[] }> = ({ branches }) => {
-    const handleAddBranch = async () => {
-        try {
-            await addDoc(collection(db, 'branches'), {
-                name: 'Nueva Sede',
-                address: 'Dirección #',
-                city: 'Valencia',
-                phone: '300 000 0000',
-                schedule: 'Lunes a Sábado: 9am - 7pm',
-                imageUrl: '',
-                mapLink: ''
-            });
-        } catch (error) {
-            console.error("Error adding branch:", error);
-        }
-    };
-
-    const handleUpdateBranch = async (branchId: string, field: string, value: any) => {
-        try {
-            await updateDoc(doc(db, 'branches', branchId), { [field]: value });
-        } catch (error) {
-            console.error("Error updating branch:", error);
-        }
-    };
-
-    const handleDeleteBranch = async (branchId: string) => {
-        if (!window.confirm('¿Estás seguro de eliminar esta sede?')) return;
-        try {
-            await deleteDoc(doc(db, 'branches', branchId));
-        } catch (error) {
-            console.error("Error deleting branch:", error);
-        }
-    };
-
-    return (
-        <div className="p-6 space-y-6">
-            <div className="flex justify-between items-center bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                <div>
-                    <h2 className="text-xl font-bold">Gestión de Sedes</h2>
-                    <p className="text-sm text-gray-500 italic">Administra la información de tus puntos físicos.</p>
-                </div>
-                <button 
-                  onClick={handleAddBranch}
-                  className="bg-primary text-white px-6 py-3 rounded-full font-bold hover:scale-105 transition-all shadow-lg flex items-center gap-2"
-                >
-                    <PlusIcon className="w-5 h-5" />
-                    Nueva Sede
-                </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                {branches.map((branch) => (
-                    <div key={branch.docId} className="bg-white p-8 rounded-3xl shadow-xl border border-gray-100 relative group">
-                        <button 
-                            onClick={() => handleDeleteBranch(branch.docId)}
-                            className="absolute top-4 right-4 p-2 text-red-500 hover:bg-red-50 rounded-full transition-colors opacity-0 group-hover:opacity-100"
-                        >
-                            <TrashIcon className="w-6 h-6" />
-                        </button>
-
-                        <div className="space-y-6">
-                            <AdminInput 
-                                label="Nombre de la Sede" 
-                                value={branch.name} 
-                                onChange={e => handleUpdateBranch(branch.docId, 'name', e.target.value)} 
-                            />
-                            <div className="grid grid-cols-2 gap-4">
-                                <AdminInput 
-                                    label="Ciudad" 
-                                    value={branch.city} 
-                                    onChange={e => handleUpdateBranch(branch.docId, 'city', e.target.value)} 
-                                />
-                                <AdminInput 
-                                    label="Teléfono" 
-                                    value={branch.phone} 
-                                    onChange={e => handleUpdateBranch(branch.docId, 'phone', e.target.value)} 
-                                />
-                            </div>
-                            <AdminInput 
-                                label="Dirección" 
-                                value={branch.address} 
-                                onChange={e => handleUpdateBranch(branch.docId, 'address', e.target.value)} 
-                            />
-                            <div className="flex flex-col gap-1">
-                                <label className="text-sm font-medium text-gray-700">Horario</label>
-                                <textarea 
-                                    rows={3}
-                                    className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
-                                    value={branch.schedule}
-                                    onChange={e => handleUpdateBranch(branch.docId, 'schedule', e.target.value)}
-                                />
-                            </div>
-                            <ImageUpload 
-                                label="Foto de la Sede" 
-                                currentImage={branch.imageUrl} 
-                                onImageSelect={url => handleUpdateBranch(branch.docId, 'imageUrl', url)} 
-                            />
-                            <AdminInput 
-                                label="Enlace Google Maps (URL)" 
-                                value={branch.mapLink || ''} 
-                                onChange={e => handleUpdateBranch(branch.docId, 'mapLink', e.target.value)} 
-                                placeholder="https://maps.app.goo.gl/..."
-                            />
-                        </div>
-                    </div>
-                ))}
-            </div>
-        </div>
-    );
-};
-
-const BranchesSection: React.FC<{ branches: StoreBranch[] }> = ({ branches }) => {
-    if (!branches || branches.length === 0) return null;
-
-    return (
-        <section className="py-20 bg-surface border-t border-gray-100">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                <div className="text-center mb-16">
-                    <h2 className="text-3xl md:text-5xl font-serif font-bold mb-6 text-on-surface cyber-text">Nuestras Sedes</h2>
-                    <p className="text-gray-500 max-w-2xl mx-auto text-lg italic">
-                        Visítanos y vive la experiencia Bombon Store en cualquiera de nuestros puntos físicos.
-                    </p>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
-                    {branches.map((branch) => (
-                        <motion.div 
-                            key={branch.docId}
-                            initial={{ opacity: 0, y: 20 }}
-                            whileInView={{ opacity: 1, y: 0 }}
-                            viewport={{ once: true }}
-                            className="bg-white rounded-3xl overflow-hidden shadow-2xl hover:shadow-primary/10 transition-all border border-gray-100 group"
-                        >
-                            <div className="relative aspect-[3/4] overflow-hidden">
-                                <img 
-                                    src={branch.imageUrl || 'https://images.unsplash.com/photo-1567401893414-76b7b1e5a7a5?q=80&w=800'} 
-                                    alt={branch.name} 
-                                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
-                                    referrerPolicy="no-referrer"
-                                />
-                                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end p-6">
-                                    <h3 className="text-white text-2xl font-bold font-serif">{branch.name}</h3>
-                                </div>
-                            </div>
-                            <div className="p-8 space-y-4">
-                                <div className="flex items-start gap-4">
-                                    <div className="p-2 bg-primary/10 rounded-lg">
-                                        <svg className="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-                                    </div>
-                                    <div>
-                                        <p className="text-sm font-bold text-on-surface uppercase tracking-wider mb-1">Dirección</p>
-                                        <p className="text-gray-600">{branch.address}, {branch.city}</p>
-                                    </div>
-                                </div>
-                                <div className="flex items-start gap-4">
-                                    <div className="p-2 bg-secondary/10 rounded-lg">
-                                        <svg className="w-5 h-5 text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                                    </div>
-                                    <div>
-                                        <p className="text-sm font-bold text-on-surface uppercase tracking-wider mb-1">Horario</p>
-                                        <p className="text-gray-600 whitespace-pre-line">{branch.schedule}</p>
-                                    </div>
-                                </div>
-                                <div className="flex items-start gap-4">
-                                    <div className="p-2 bg-accent/10 rounded-lg">
-                                        <svg className="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
-                                    </div>
-                                    <div>
-                                        <p className="text-sm font-bold text-on-surface uppercase tracking-wider mb-1">Contacto</p>
-                                        <p className="text-gray-600">{branch.phone}</p>
-                                    </div>
-                                </div>
-                                
-                                {branch.mapLink && (
-                                    <a 
-                                        href={branch.mapLink} 
-                                        target="_blank" 
-                                        rel="noopener noreferrer"
-                                        className="inline-flex items-center gap-2 text-primary font-bold pt-4 hover:underline"
-                                    >
-                                        <span>Ver en Google Maps</span>
-                                        <ArrowLeftIcon className="w-4 h-4 rotate-180" />
-                                    </a>
-                                )}
-                            </div>
-                        </motion.div>
-                    ))}
-                </div>
-            </div>
-        </section>
-    );
-};
-
-const AdminOrdersTab: React.FC<{
-    user: User,
-    orders: Order[],
-    formatCurrency: (n: number) => string,
-    onDelete: (docId: string) => void,
-    onUpdate: (docId: string, data: Partial<Order>) => void,
-}> = ({ user, orders, formatCurrency, onDelete, onUpdate }) => {
-    const [statusFilter, setStatusFilter] = useState<'All' | Order['status']>('All');
-    const [viewingOrder, setViewingOrder] = useState<Order | null>(null);
-
-    const filteredOrders = useMemo(() => {
-        const sortedOrders = [...(orders || [])].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-        if (statusFilter === 'All') return sortedOrders;
-        return sortedOrders.filter(o => o.status === statusFilter);
-    }, [orders, statusFilter]);
-
-    const salesReport = useMemo(() => {
-        const reportOrders = statusFilter === 'All' ? orders : orders.filter(o => o.status === statusFilter);
-        const totalRevenue = reportOrders.reduce((sum, order) => sum + order.total, 0);
-        const revenueByPaymentMethod = reportOrders.reduce((acc, order) => {
-            acc[order.paymentMethod] = (acc[order.paymentMethod] || 0) + order.total;
-            return acc;
-        }, {} as Record<string, number>);
-
-        const productSales: { [name: string]: { name: string, quantity: number, revenue: number } } = {};
-        for (const order of reportOrders) {
-            for (const item of order.items) {
-                if (!productSales[item.productId]) { productSales[item.productId] = { name: item.name, quantity: 0, revenue: 0 }; }
-                productSales[item.productId].quantity += item.quantity;
-                productSales[item.productId].revenue += item.quantity * item.price;
-            }
-        }
-        const topSellingProducts = Object.values(productSales).sort((a, b) => b.quantity - a.quantity).slice(0, 10);
-
-        return { totalRevenue, totalOrders: reportOrders.length, topSellingProducts, revenueByPaymentMethod };
-    }, [orders, statusFilter]);
-
-    const orderStatuses: Order['status'][] = ['Pendiente', 'En Proceso', 'Enviado', 'Completado', 'Cancelado'];
-    
-    return (
-        <>
-            <div className="p-6">
-                <h1 className="text-2xl font-bold mb-6">Pedidos e Informes</h1>
-                {user.role === 'admin' && (
-                    <div className="mb-8 bg-gray-50 p-4 rounded-lg">
-                        <div className="flex justify-between items-center mb-4">
-                            <h2 className="text-xl font-bold text-gray-800">Informe de Ventas</h2>
-                            <div className="flex items-center space-x-2">
-                                <label htmlFor="statusFilter" className="text-sm font-medium">Filtrar por estado:</label>
-                                <select id="statusFilter" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)} className="bg-white border border-gray-300 rounded-md px-2 py-1 text-sm focus:ring-primary focus:border-primary">
-                                    <option value="All">Todos</option>
-                                    {orderStatuses.map(s => <option key={s} value={s}>{s}</option>)}
-                                </select>
-                            </div>
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                            <div className="bg-white p-4 rounded-lg shadow"><h3 className="text-sm font-medium text-gray-500">Ingresos Totales</h3><p className="text-2xl font-bold text-gray-900">{formatCurrency(salesReport.totalRevenue)}</p></div>
-                            <div className="bg-white p-4 rounded-lg shadow"><h3 className="text-sm font-medium text-gray-500">Total Pedidos</h3><p className="text-2xl font-bold text-gray-900">{salesReport.totalOrders}</p></div>
-                            <div className="bg-white p-4 rounded-lg shadow md:col-span-2 lg:col-span-2"><h3 className="text-sm font-medium text-gray-500 mb-2">Ingresos por Medio de Pago</h3>
-                                {Object.keys(salesReport.revenueByPaymentMethod).length > 0 ? (<div className="space-y-1">{Object.entries(salesReport.revenueByPaymentMethod).map(([method, amount]) => (<div key={method} className="flex justify-between text-sm"><span className="font-medium">{method}:</span><span>{formatCurrency(amount)}</span></div>))}</div>) : (<p className="text-sm text-gray-500">No hay datos.</p>)}
-                            </div>
-                            <div className="bg-white p-4 rounded-lg shadow md:col-span-2 lg:col-span-4"><h3 className="text-sm font-medium text-gray-500 mb-2">Productos Más Vendidos (Top 10)</h3>
-                                {salesReport.topSellingProducts.length > 0 ? (<ul className="space-y-2 max-h-48 overflow-y-auto">{salesReport.topSellingProducts.map(p => (<li key={p.name} className="flex justify-between items-center text-sm border-b pb-1"><span className="font-medium text-gray-700">{p.name}</span><span className="text-gray-500">Vendidos: <span className="font-bold text-gray-800">{p.quantity}</span></span></li>))}</ul>) : (<p className="text-sm text-gray-500">No hay datos de productos vendidos para este filtro.</p>)}
-                            </div>
-                        </div>
-                    </div>
-                )}
-                <div className="bg-white rounded-lg shadow overflow-x-auto">
-                    <table className="w-full min-w-max">
-                        <thead className="bg-gray-50"><tr>
-                            <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID Orden</th>
-                            <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha</th>
-                            <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cliente</th>
-                            <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
-                            <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
-                            <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
-                        </tr></thead>
-                        <tbody className="divide-y divide-gray-200">
-                            {(!filteredOrders || filteredOrders.length === 0) && <tr><td colSpan={6} className="p-4 text-center text-gray-500">No hay pedidos que coincidan con el filtro.</td></tr>}
-                            {filteredOrders.map(o => (
-                                <tr key={o.docId} className="hover:bg-gray-50">
-                                    <td className="p-3 text-sm font-medium text-gray-900">{o.orderNumber}</td>
-                                    <td className="p-3 text-sm text-gray-500">{new Date(o.date).toLocaleDateString()}</td>
-                                    <td className="p-3 text-sm text-gray-500">{o.customerName}</td>
-                                    <td className="p-3 text-sm text-gray-500">{formatCurrency(o.total)}</td>
-                                    <td className="p-3 text-sm text-gray-500">{o.status}</td>
-                                    <td className="p-3 text-sm space-x-2">
-                                        <button onClick={() => setViewingOrder(o)} className="text-primary hover:text-primary-dark font-medium">Ver/Editar</button>
-                                        <button onClick={() => onDelete(o.docId)} className="text-red-500 hover:text-red-700"><TrashIcon className="w-4 h-4 inline-block" /></button>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-            {viewingOrder && <OrderDetailModal order={viewingOrder} onClose={() => setViewingOrder(null)} onSave={onUpdate} formatCurrency={formatCurrency} />}
-        </>
-    );
-};
-
-const OrderDetailModal: React.FC<{
-    order: Order;
-    onClose: () => void;
-    onSave: (docId: string, data: Partial<Order>) => void;
-    formatCurrency: (n: number) => string;
-}> = ({ order, onClose, onSave, formatCurrency }) => {
-    const [editedOrder, setEditedOrder] = useState(order);
-    const orderStatuses: Order['status'][] = ['Pendiente', 'En Proceso', 'Enviado', 'Completado', 'Cancelado'];
-    const paymentOptions = ['Nequi', 'Daviplata', 'Tarjeta', 'Addi', 'Sistecredito'];
-
-    const handleSave = () => {
-        const changes: Partial<Order> = {};
-        if (editedOrder.status !== order.status) changes.status = editedOrder.status;
-        if (editedOrder.paymentMethod !== order.paymentMethod) changes.paymentMethod = editedOrder.paymentMethod;
-        
-        if (Object.keys(changes).length > 0) {
-            onSave(order.docId, changes);
-        }
-        onClose();
-    };
-
-    return (
-        <div className="fixed inset-0 bg-black/60 z-[95] flex items-center justify-center p-4" onClick={onClose}>
-            <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
-                <div className="flex justify-between items-center p-4 border-b">
-                    <h2 className="text-xl font-semibold">Detalle del Pedido: {order.orderNumber}</h2>
-                    <button onClick={onClose}><CloseIcon className="w-6 h-6" /></button>
-                </div>
-                <div className="p-6 overflow-y-auto space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                        <div><h3 className="font-semibold">Cliente:</h3><p>{order.customerName}</p></div>
-                        <div><h3 className="font-semibold">Teléfono:</h3><p>{order.customerPhone}</p></div>
-                        <div><h3 className="font-semibold">Fecha:</h3><p>{new Date(order.date).toLocaleString()}</p></div>
-                        <div><h3 className="font-semibold">Entrega:</h3><p>{order.deliveryMethod}</p></div>
-                        {order.address && <div className="col-span-2"><h3 className="font-semibold">Dirección:</h3><p>{order.address}</p></div>}
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                         <div>
-                            <label className="block text-sm font-medium mb-1">Estado del Pedido</label>
-                            <select value={editedOrder.status} onChange={e => setEditedOrder({...editedOrder, status: e.target.value as Order['status']})} className="w-full bg-surface border border-gray-300 rounded-md px-3 py-2 focus:ring-primary focus:border-primary">
-                                {orderStatuses.map(s => <option key={s} value={s}>{s}</option>)}
-                            </select>
-                        </div>
-                         <div>
-                            <label className="block text-sm font-medium mb-1">Medio de Pago</label>
-                            <select value={editedOrder.paymentMethod} onChange={e => setEditedOrder({...editedOrder, paymentMethod: e.target.value})} className="w-full bg-surface border border-gray-300 rounded-md px-3 py-2 focus:ring-primary focus:border-primary">
-                                {paymentOptions.map(p => <option key={p} value={p}>{p}</option>)}
-                            </select>
-                        </div>
-                    </div>
-                    <div>
-                        <h3 className="font-semibold border-t pt-2">Items:</h3>
-                        <ul className="divide-y">
-                            {order.items.map(item => (
-                                <li key={item.id} className="py-2 flex justify-between">
-                                    <span>{item.quantity} x {item.name} {item.size && `(${item.size})`} {item.color && `(${item.color})`}</span>
-                                    <span>{formatCurrency(item.price * item.quantity)}</span>
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
-                     <div className="bg-surface p-4 rounded-lg space-y-2 mt-4 text-right">
-                        <div className="flex justify-between text-sm"><span>Subtotal</span><span>{formatCurrency(order.subtotal)}</span></div>
-                        <div className="flex justify-between text-sm"><span>Envío</span><span>{formatCurrency(order.shippingCost)}</span></div>
-                        <div className="flex justify-between font-bold text-lg border-t pt-2 mt-2"><span>Total</span><span>{formatCurrency(order.total)}</span></div>
-                     </div>
-                </div>
-                <div className="p-4 border-t bg-gray-50 flex justify-end space-x-2">
-                    <button onClick={onClose} className="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">Cancelar</button>
-                    <button onClick={handleSave} className="bg-primary text-white px-4 py-2 rounded-md hover:bg-primary-dark">Guardar Cambios</button>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-const ProductEditor: React.FC<{
-    product: Product; categories: Category[]; onSave: (p: Product) => void;
-    onCancel: () => void; onDelete: (id: string) => void; isNewProduct: boolean;
-}> = ({ product, categories, onSave, onCancel, onDelete, isNewProduct }) => {
-    const [edited, setEdited] = useState(product);
-    const [newSize, setNewSize] = useState('');
-    const [newColor, setNewColor] = useState('');
-    const [isGeneratingAI, setIsGeneratingAI] = useState(false);
-
-    const handleChange = (field: keyof Product, value: any) => {
-        setEdited(p => ({ ...p, [field]: value }));
-    };
-
-    const handleGenerateAIDescription = async () => {
-        if (!edited.name) {
-            alert("Necesitas un nombre para generar la descripción.");
-            return;
-        }
-        setIsGeneratingAI(true);
-        const result = await generateProductDescription(edited.name, edited.imageUrl || undefined);
-        if (typeof result === 'object') {
-            setEdited(p => ({ ...p, name: result.name, description: result.description }));
-        } else if (typeof result === 'string' && !result.startsWith('Error')) {
-            handleChange('description', result);
-        } else if (typeof result === 'string') {
-            alert(result);
-        }
-        setIsGeneratingAI(false);
-    };
-
-    const handleVariantChange = (field: keyof ProductVariants, value: any) => {
-        setEdited(p => ({
-            ...p,
-            variants: {
-                ...(p.variants || { hasSizes: false, sizes: {}, hasColors: false, colors: {} }),
-                [field]: value
-            }
-        }));
-    };
-
-    const handleSizeAdd = () => {
-        if (newSize && !(edited.variants?.sizes || {})[newSize]) {
-            const newSizes = { ...(edited.variants?.sizes || {}), [newSize]: { available: true } };
-            handleVariantChange('sizes', newSizes);
-            setNewSize('');
-        }
-    };
-
-    const handleSizeRemove = (size: string) => {
-        const { [size]: _, ...remaining } = edited.variants?.sizes || {};
-        handleVariantChange('sizes', remaining);
-    };
-
-    const handleSizeAvailability = (size: string, available: boolean) => {
-        const newSizes = { ...(edited.variants?.sizes || {}), [size]: { available } };
-        handleVariantChange('sizes', newSizes);
-    };
-
-    const handleColorAdd = () => {
-        if (newColor && !(edited.variants?.colors || {})[newColor]) {
-            const newColors = { ...(edited.variants?.colors || {}), [newColor]: { available: true, imageUrl: '' } };
-            handleVariantChange('colors', newColors);
-            setNewColor('');
-        }
-    };
-    
-    const handleColorRemove = (color: string) => {
-        const colorDetail = edited.variants?.colors?.[color];
-        if (colorDetail?.imageUrl && colorDetail.imageUrl === edited.imageUrl) {
-            handleChange('imageUrl', '');
-        }
-
-        const { [color]: _, ...remaining } = edited.variants?.colors || {};
-        handleVariantChange('colors', remaining);
-    };
-
-    const handleColorUpdate = (color: string, field: keyof ProductColorVariantDetail, value: any) => {
-        const currentColors = edited.variants?.colors || {};
-        const currentColorData = currentColors[color] || { available: false, imageUrl: '' };
-        const updatedColor = { ...currentColorData, [field]: value };
-        const newColors = { ...currentColors, [color]: updatedColor };
-        handleVariantChange('colors', newColors);
-
-        if (field === 'imageUrl' && value && !edited.imageUrl) {
-            handleChange('imageUrl', value);
-        }
-    };
-
-    return (
-        <div className="p-6 h-full">
-            <div className="flex justify-between items-start mb-6">
-                <h1 className="text-2xl font-bold">{isNewProduct ? 'Agregar Nuevo Producto' : `Editando: ${product.name}`}</h1>
-                <div>
-                    <button onClick={onCancel} className="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300 mr-2">Cancelar</button>
-                    <button onClick={() => onSave(edited)} className="bg-green-500 text-white px-4 py-2 rounded-md hover:bg-green-600">Guardar Producto</button>
-                </div>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2 bg-white rounded-lg shadow p-6 space-y-4">
-                    <AdminInput label="Nombre del Producto" value={edited.name} onChange={e => handleChange('name', e.target.value)} />
-                    <AdminInput label="Proveedor" value={edited.provider || ''} onChange={e => handleChange('provider', e.target.value)} placeholder="Ej: Confecciones ABC" />
-                    <div>
-                        <div className="flex justify-between items-center mb-1">
-                            <label className="block text-sm font-medium text-gray-700">Descripción</label>
-                            <button 
-                                onClick={handleGenerateAIDescription} 
-                                disabled={isGeneratingAI}
-                                className="text-xs text-primary font-bold flex items-center gap-1 hover:underline disabled:opacity-50"
-                            >
-                                {isGeneratingAI ? 'Generando...' : '✨ Generar con IA'}
-                            </button>
-                        </div>
-                        <textarea value={edited.description} onChange={e => handleChange('description', e.target.value)} rows={4} className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"/>
-                    </div>
-                    <div className="flex flex-wrap gap-4 mb-4">
-                        <div className="flex items-center space-x-2">
-                            <input type="checkbox" id="madeInColombia" checked={edited.madeInColombia ?? true} onChange={e => handleChange('madeInColombia', e.target.checked)} className="h-4 w-4 text-primary rounded border-gray-300 focus:ring-primary" />
-                            <label htmlFor="madeInColombia" className="text-sm font-medium text-gray-700">Hecho en Colombia</label>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                            <input type="checkbox" id="isFeatured" checked={edited.isFeatured ?? false} onChange={e => handleChange('isFeatured', e.target.checked)} className="h-4 w-4 text-primary rounded border-gray-300 focus:ring-primary" />
-                            <label htmlFor="isFeatured" className="text-sm font-medium text-gray-700">⭐ Destacado (Tendencia)</label>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                            <input type="checkbox" id="isNewArrival" checked={edited.isNewArrival ?? false} onChange={e => handleChange('isNewArrival', e.target.checked)} className="h-4 w-4 text-primary rounded border-gray-300 focus:ring-primary" />
-                            <label htmlFor="isNewArrival" className="text-sm font-medium text-gray-700">🆕 Recién Llegado</label>
-                        </div>
-                    </div>
-                    <div className="grid grid-cols-3 gap-4">
-                        <AdminInput label="Precio (COP)" type="number" value={edited.price} onChange={e => handleChange('price', parseFloat(e.target.value) || 0)} />
-                        <AdminInput 
-                            label="Descuento (%)" 
-                            type="number" 
-                            value={edited.discountPercentage || ''} 
-                            onChange={e => {
-                                const value = Math.max(0, Math.min(100, parseInt(e.target.value, 10) || 0));
-                                handleChange('discountPercentage', value);
-                            }} 
-                            min="0" 
-                            max="100"
-                            placeholder="Ej: 15"
-                        />
-                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Categoría</label>
-                            <select value={edited.category} onChange={e => handleChange('category', e.target.value)} className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary sm:text-sm">
-                                {(categories || []).map(c => <option key={c} value={c}>{c}</option>)}
-                            </select>
-                        </div>
-                    </div>
-                     <ImageUpload label="Imagen Principal" currentImage={edited.imageUrl} onImageSelect={url => handleChange('imageUrl', url)} />
-                     <div className="flex items-center space-x-2">
-                        <input type="checkbox" id="isAvailable" checked={edited.available} onChange={e => handleChange('available', e.target.checked)} className="h-4 w-4 text-primary rounded border-gray-300 focus:ring-primary" />
-                        <label htmlFor="isAvailable" className="text-sm font-medium text-gray-700">Disponible para la venta</label>
-                    </div>
-                </div>
-
-                <div className="lg:col-span-1 bg-white rounded-lg shadow p-6 space-y-6">
-                    <h3 className="font-bold text-lg">Variantes</h3>
-                    
-                    <div className="border-t pt-4">
-                        <div className="flex items-center space-x-2 mb-2">
-                           <input type="checkbox" id="hasSizes" checked={edited.variants?.hasSizes || false} onChange={e => handleVariantChange('hasSizes', e.target.checked)} className="h-4 w-4 text-primary rounded border-gray-300 focus:ring-primary" />
-                           <label htmlFor="hasSizes" className="text-sm font-medium text-gray-700">Tiene tallas</label>
-                        </div>
-                        {edited.variants?.hasSizes && (
-                            <div className="pl-6 space-y-2">
-                                <div className="flex space-x-2">
-                                    <input type="text" value={newSize} onChange={e => setNewSize(e.target.value)} placeholder="Ej: S, M, 36" className="w-full text-sm px-2 py-1 border border-gray-300 rounded-md"/>
-                                    <button onClick={handleSizeAdd} className="bg-gray-200 px-3 py-1 text-sm rounded-md">+</button>
-                                </div>
-                                {Object.entries(edited.variants?.sizes || {}).map(([size, detail]: [string, ProductVariantDetail]) => (
-                                    <div key={size} className="flex justify-between items-center text-sm">
-                                        <span>{size}</span>
-                                        <div className="flex items-center space-x-2">
-                                            <label className="flex items-center space-x-1 cursor-pointer"><input type="checkbox" checked={detail.available} onChange={e => handleSizeAvailability(size, e.target.checked)} className="h-3.5 w-3.5"/><span>Disp.</span></label>
-                                            <button onClick={() => handleSizeRemove(size)} className="text-red-500"><TrashIcon className="w-4 h-4"/></button>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                    
-                    <div className="border-t pt-4">
-                        <div className="flex items-center space-x-2 mb-2">
-                           <input type="checkbox" id="hasColors" checked={edited.variants?.hasColors || false} onChange={e => handleVariantChange('hasColors', e.target.checked)} className="h-4 w-4 text-primary rounded border-gray-300 focus:ring-primary"/>
-                           <label htmlFor="hasColors" className="text-sm font-medium text-gray-700">Tiene colores</label>
-                        </div>
-                        {edited.variants?.hasColors && (
-                             <div className="pl-6 space-y-4">
-                                <div className="flex space-x-2">
-                                    <input type="text" value={newColor} onChange={e => setNewColor(e.target.value)} placeholder="Ej: Rojo, Azul" className="w-full text-sm px-2 py-1 border border-gray-300 rounded-md"/>
-                                    <button onClick={handleColorAdd} className="bg-gray-200 px-3 py-1 text-sm rounded-md">+</button>
-                                </div>
-                                {Object.entries(edited.variants?.colors || {}).map(([color, detail]: [string, ProductColorVariantDetail]) => (
-                                    <div key={color} className="space-y-2 p-2 border rounded-md bg-gray-50">
-                                        <div className="flex justify-between items-center text-sm font-medium">
-                                          <span>{color}</span>
-                                          <button onClick={() => handleColorRemove(color)} className="text-red-500 hover:text-red-700"><TrashIcon className="w-4 h-4"/></button>
-                                        </div>
-                                        <ImageUpload label="" currentImage={detail.imageUrl || ''} onImageSelect={url => handleColorUpdate(color, 'imageUrl', url)} />
-                                        {detail.imageUrl && (
-                                            <button
-                                                type="button"
-                                                onClick={() => handleChange('imageUrl', detail.imageUrl!)}
-                                                disabled={detail.imageUrl === edited.imageUrl}
-                                                className="w-full text-xs py-1 px-2 rounded-md transition-colors disabled:cursor-not-allowed disabled:bg-primary disabled:text-white bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium"
-                                            >
-                                                {detail.imageUrl === edited.imageUrl ? '✔ Principal' : 'Usar como Principal'}
-                                            </button>
-                                        )}
-                                        <label className="flex items-center space-x-2 cursor-pointer text-sm">
-                                            <input type="checkbox" checked={detail.available} onChange={e => handleColorUpdate(color, 'available', e.target.checked)} className="h-3.5 w-3.5 text-primary focus:ring-primary border-gray-300 rounded"/>
-                                            <span>Disponible</span>
-                                        </label>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-                {!isNewProduct && (
-                <div className="lg:col-span-3">
-                     <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                        <h3 className="font-bold text-red-800">Zona de Peligro</h3>
-                        <p className="text-sm text-red-600 mt-1">Esta acción no se puede deshacer. Se eliminará el producto permanentemente.</p>
-                        <button onClick={() => onDelete(product.id)} className="mt-2 bg-red-600 text-white px-4 py-2 text-sm rounded-md hover:bg-red-700">Eliminar este producto</button>
-                    </div>
-                </div>
-                )}
-            </div>
-        </div>
-    );
-};
 
 export default App;

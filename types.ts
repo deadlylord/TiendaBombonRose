@@ -22,6 +22,7 @@ export interface Product {
   category: string;
   imageUrl: string;
   additionalImages?: string[];
+  sizeGuideText?: string;
   available: boolean;
   variants: ProductVariants;
   discountPercentage?: number;
