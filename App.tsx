@@ -20,6 +20,8 @@ import {
 import CatalogControls from './components/CatalogControls';
 import ProductImage from './components/ProductImage';
 import { searchCatalog, availableVariantOptions, CatalogFilters, CatalogSort, salePrice } from './services/catalogSearch';
+import { orderCategories, isMensCategory } from './services/categoryOrder';
+import { createStoreNavigation } from './services/storeNavigation';
 import AdminInput from './components/AdminInput';
 import BranchesSection from './components/BranchesSection';
 import { generateProductDescription, getValidColor } from './services/productTools';
@@ -169,7 +171,7 @@ const App: React.FC = () => {
     const [cart, setCart] = useBrowserStorage<CartItem[]>(`storeCart:${companyId}`, []);
     const products = useMemo(() => buildCatalog(posInventory, posCategories, productExtensions, companyId), [posInventory, posCategories, productExtensions, companyId]);
     // Only show populated categories; local aliases must not add empty categories.
-    const categories = useMemo(() => [...new Set(products.map(product => product.category))].sort((a, b) => a.localeCompare(b, 'es')), [products]);
+    const categories = useMemo(() => orderCategories(products.map(product => product.category)), [products]);
     // UI State
     const [isMobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [isCartOpen, setCartOpen] = useState(false);
@@ -182,7 +184,6 @@ const App: React.FC = () => {
     const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
     const [productToEdit, setProductToEdit] = useState<Product | null>(null);
     const [toasts, setToasts] = useState<ToastMessage[]>([]);
-    const [isProductDetailFromCart, setProductDetailFromCart] = useState(false);
 
     // Theme State
     const [isMenTheme, setIsMenTheme] = useState(false);
@@ -226,12 +227,10 @@ const App: React.FC = () => {
     // --- ROUTING LOGIC ---
     const [currentPath, setCurrentPath] = useState(window.location.pathname);
 
+    const navigation = useRef<ReturnType<typeof createStoreNavigation> | null>(null);
     useEffect(() => {
-        const onPopState = () => setCurrentPath(window.location.pathname);
-        window.addEventListener('popstate', onPopState);
-        // Trigger initial route check
-        onPopState();
-        return () => window.removeEventListener('popstate', onPopState);
+        navigation.current = createStoreNavigation(window, setCurrentPath);
+        return () => { navigation.current?.dispose(); navigation.current = null; };
     }, []);
 
     useEffect(() => {
@@ -245,9 +244,11 @@ const App: React.FC = () => {
 
         // Close secondary (non-routed) modals if a primary one is opening
         if (productMatch || isAdminRoute || isCartRoute || isCheckoutRoute || isSearchRoute) {
-            setIsSearching(isSearchRoute);
+            if (isSearchRoute) setIsSearching(true);
             setAddUserModalOpen(false);
         }
+
+        if (route === '/') setIsSearching(false);
 
         // Handle Product Detail Modal
         if (productMatch) {
@@ -271,21 +272,10 @@ const App: React.FC = () => {
 
         // Handle Checkout/Invoice Modal
         setInvoiceModalOpen(isCheckoutRoute);
-
-        // Reset from-cart flag if we are not in the product detail view anymore
-        if (!productMatch) {
-            setProductDetailFromCart(false);
-        }
     }, [currentPath, products, areProductsLoading]);
 
-    const navigate = (path: string) => {
-        window.history.pushState(null, '', path);
-        setCurrentPath(path);
-    };
-
-    const closeModal = () => {
-        navigate('/');
-    };
+    const navigate = (path: string) => navigation.current?.navigate(path);
+    const closeModal = () => navigation.current?.close();
 
     const handleOpenProductDetails = (product: Product) => {
         navigate(`/product/${encodeURIComponent(product.id)}`);
@@ -363,6 +353,7 @@ const App: React.FC = () => {
         setSelectedSizeFilter(filters.size);
         setSelectedColorFilter(filters.color);
         setCatalogSort(filters.sort);
+        setIsMenTheme(isMensCategory(filters.category));
         if (currentPath !== '/search') navigate('/search');
     };
     const catalogControls = <CatalogControls filters={catalogFilters} categories={categories} sizes={sizeOptions} colors={colorOptions} count={filteredProducts.length} onChange={handleCatalogFilters} />;
@@ -487,11 +478,7 @@ const App: React.FC = () => {
         }
         showToast(`${product.name} agregado al carrito!`);
 
-        if (isProductDetailFromCart) {
-            navigate('/cart');
-        } else {
-            closeModal();
-        }
+        if (currentPath.startsWith('/product/')) closeModal();
     };
 
     const handleQuickAddToCart = (product: Product) => {
@@ -499,7 +486,6 @@ const App: React.FC = () => {
       const hasDefinedColors = !!(product.variants?.hasColors && product.variants.colors && Object.keys(product.variants.colors).length > 0);
 
       if (hasDefinedSizes || hasDefinedColors) {
-        setProductDetailFromCart(false);
         handleOpenProductDetails(product);
       } else {
         handleAddToCart(product, 1);
@@ -511,7 +497,6 @@ const App: React.FC = () => {
       const hasDefinedColors = !!(product.variants?.hasColors && product.variants.colors && Object.keys(product.variants.colors).length > 0);
 
       if (hasDefinedSizes || hasDefinedColors) {
-        setProductDetailFromCart(true);
         handleOpenProductDetails(product);
       } else {
         handleAddToCart(product, 1);
@@ -558,9 +543,7 @@ const App: React.FC = () => {
         if (category === 'All') {
             setIsMenTheme(false);
         } else {
-            const lowerCat = category.toLowerCase();
-            const isMen = lowerCat.includes('hombre') || lowerCat.includes('caballero') || lowerCat.includes('men') || lowerCat.includes('niño') || lowerCat.includes('niña') || lowerCat.includes('camisa') || lowerCat.includes('camiseta') || lowerCat.includes('street');
-            setIsMenTheme(isMen);
+            setIsMenTheme(isMensCategory(category));
         }
 
         window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -573,9 +556,7 @@ const App: React.FC = () => {
       if (category === 'All') {
           setIsMenTheme(false);
       } else {
-          const lowerCat = category.toLowerCase();
-          const isMen = lowerCat.includes('hombre') || lowerCat.includes('caballero') || lowerCat.includes('men') || lowerCat.includes('niño') || lowerCat.includes('niña') || lowerCat.includes('camisa') || lowerCat.includes('camiseta') || lowerCat.includes('street');
-          setIsMenTheme(isMen);
+          setIsMenTheme(isMensCategory(category));
       }
 
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -590,9 +571,7 @@ const App: React.FC = () => {
             if (category === 'All' || category === 'On Sale') {
                 setIsMenTheme(false);
             } else {
-                const lowerCat = category.toLowerCase();
-                const isMen = lowerCat.includes('hombre') || lowerCat.includes('caballero') || lowerCat.includes('men') || lowerCat.includes('niño') || lowerCat.includes('niña') || lowerCat.includes('camisa') || lowerCat.includes('camiseta') || lowerCat.includes('street');
-                setIsMenTheme(isMen);
+                setIsMenTheme(isMensCategory(category));
             }
         }
 
@@ -1005,6 +984,16 @@ const App: React.FC = () => {
                 selectedCategory={selectedCategory}
                 currentUser={currentUser}
                 onAdminClick={handleOpenAdmin}
+                onHomeClick={() => {
+                    setSelectedCategory('All');
+                    setSearchTerm('');
+                    setSelectedSizeFilter('');
+                    setSelectedColorFilter('');
+                    setIsSearching(false);
+                    setIsMenTheme(false);
+                    navigate('/');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
                 onSearchClick={() => navigate('/search')}
                 isMenTheme={isMenTheme}
                 config={config}
@@ -1177,7 +1166,7 @@ const App: React.FC = () => {
             />}
             {renderAdminView()}
             {selectedProduct && selectedProduct.companyId === companyId && <ProductDetailModal product={selectedProduct} onClose={closeModal} onAddToCart={handleAddToCart} formatCurrency={formatCurrency} showToast={showToast} allProducts={products} config={config} onSelectProduct={handleOpenProductDetails} />}
-            {isInvoiceModalOpen && <InvoiceModal onClose={() => navigate('/cart')} cart={cart} subtotal={cartSubtotal} onSubmitOrder={handleNewOrder} isSubmitting={isOrdering} branches={branches} config={config} formatCurrency={formatCurrency} />}
+            {isInvoiceModalOpen && <InvoiceModal onClose={closeModal} cart={cart} subtotal={cartSubtotal} onSubmitOrder={handleNewOrder} isSubmitting={isOrdering} branches={branches} config={config} formatCurrency={formatCurrency} />}
             {isAddUserModalOpen && <AddUserModal onClose={() => setAddUserModalOpen(false)} onCreateUser={handleCreateUser} />}
 
 
@@ -1466,9 +1455,10 @@ const Header: React.FC<{
     currentUser: FirebaseUser | null,
     onAdminClick: () => void,
     onSearchClick: () => void,
+    onHomeClick: () => void,
     isMenTheme?: boolean,
     config?: StoreConfig
-}> = ({ logoUrl, cartItemCount, onCartClick, isMobileMenuOpen, setMobileMenuOpen, categories, onSelectCategory, selectedCategory, currentUser, onAdminClick, onSearchClick, isMenTheme, config }) => {
+}> = ({ logoUrl, cartItemCount, onCartClick, isMobileMenuOpen, setMobileMenuOpen, categories, onSelectCategory, selectedCategory, currentUser, onAdminClick, onSearchClick, onHomeClick, isMenTheme, config }) => {
 
     const baseLinkClasses = 'block text-lg px-4 py-3 rounded-md transition-colors';
     const activeLinkClasses = `font-semibold cyber-text ${isMenTheme ? 'cyber-gradient-bg text-white' : 'bg-primary/20 text-primary'}`;
@@ -1485,12 +1475,8 @@ const Header: React.FC<{
 
     const handleLogoClick = (e: React.MouseEvent) => {
         e.preventDefault();
-        window.location.hash = '/';
         setMobileMenuOpen(false);
-        window.scrollTo({
-            top: 0,
-            behavior: 'smooth'
-        });
+        onHomeClick();
     };
 
     const hasAnnouncements = config?.showAnnouncements !== false && config?.announcements && config.announcements.some(ann => ann.trim() !== '');
@@ -2007,7 +1993,7 @@ const ProductDetailModal: React.FC<{
     };
 
     return (
-        <div className="fixed inset-0 bg-background z-[70] overflow-y-auto" onClick={onClose}>
+        <div className="fixed inset-0 bg-background z-[70] overflow-y-auto overscroll-contain" onClick={onClose}>
             <div className="min-h-screen flex flex-col bg-background" onClick={e => e.stopPropagation()}>
                 <div className="flex flex-col md:flex-row">
                     {/* Close Button - Floating */}

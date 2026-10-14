@@ -45,3 +45,9 @@ En el editor de productos se pueden guardar fotografías adicionales (URLs, una 
 Guardar un producto espera la respuesta de Firebase; un error conserva el editor abierto. No se marca el origen colombiano automáticamente.
 
 El panel administrativo se descarga únicamente al abrirlo, y Tailwind se compila en el build en lugar de depender de un script CDN. Se eliminó la incorporación completa de `process.env` al frontend. `netlify.toml` establece validación y compilación antes de publicar `dist`; la conexión y el despliegue efectivos en Netlify deben comprobarse en esa plataforma. Las rutas conservan el fallback SPA de `public/_redirects`.
+
+## Categorías y navegación (0.4.1)
+
+Las categorías femeninas y generales aparecen antes que las masculinas, conservando orden alfabético dentro de cada grupo. La clasificación usa el nombre de la categoría: una etiqueta explícita de mujer/dama tiene prioridad, y hombre/caballero/Street o camisas/camisetas se agrupan después. Se aplica el mismo orden al menú y a los filtros, sin lecturas adicionales.
+
+Abrir una ficha conserva la búsqueda o categoría debajo, incluidos filtros y productos ya mostrados. Cerrar la ficha, agregar al carrito desde ella o usar el gesto de atrás vuelve a la entrada anterior del historial y recupera su posición vertical. Los productos relacionados retroceden uno por uno. Una ficha abierta directamente desde un enlace vuelve al catálogo al cerrarla. El cierre ya no agrega visitas artificiales al inicio.
