@@ -10,7 +10,7 @@ test('The initial HTML shows the same loading screen as React before application
   const initialScreen = html.match(/<div id="root">(.*?)<\/div>\s*<noscript>/s)?.[1];
   assert.equal(initialScreen, renderToStaticMarkup(createElement(StoreLoader)));
   assert.match(html, /<style id="store-loading-styles">/);
-  assert.match(html, /@keyframes store-loading-carousel/);
+  assert.match(html, /@keyframes store-loading-spin/);
   assert.match(initialScreen!, /Descubre tu próximo outfit/);
   assert.doesNotMatch(initialScreen!, /store-startup__(brand|letter|dots)/);
   // Fonts must not hold up the first paint on slower connections.
@@ -23,5 +23,5 @@ test('A failed application download replaces the loading animation with an acces
   assert.match(html, /role="alert"/);
   assert.match(html, /Revisa tu conexión/);
   assert.match(html, /<button[^>]*>Volver a intentar<\/button>/);
-  assert.doesNotMatch(html, /store-startup__carousel/);
+  assert.doesNotMatch(html, /store-startup__spinner/);
 });
