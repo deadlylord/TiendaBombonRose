@@ -82,3 +82,14 @@ La carga inicial y la de React comparten un carrusel continuo de contornos SVG r
 ## Carga restaurada (0.4.7)
 
 Se restaura el círculo rosa giratorio y «Descubre tu próximo outfit», tanto en el HTML inicial como en React. Se conservan los cambios de cabecera y las imágenes editables de categorías.
+
+
+## Carga estable y banners completos (0.4.8)
+
+El inicio muestra la cabecera y carga banners tras resolver la configuración, sin esperar a inventario, categorías y personalizaciones. Mantiene el catálogo completo anterior mientras llegan actualizaciones de la misma empresa, bloquea pedidos durante la actualización y nunca reutiliza productos de otra empresa. Se evitan consultas dependientes de los resultados parciales de inventario. El carrusel de productos se declara fuera de App para conservar su identidad y desplazamiento al cambiar estados. La primera presentación no aplica un fundido desde blanco.
+
+Los banners usan un marco vertical 2:3 en celular (8:5 en escritorio), limitado al 80 % de la altura de pantalla, con ajuste contain. Los textos y el enlace quedan debajo de la foto. Se descarga y decodifica la imagen antes de mostrarla; se precarga solamente la siguiente, y se conserva la anterior si la siguiente tarda o falla. Los errores permiten reintentar. No hay rotación automática con movimiento reducido.
+
+Las nuevas fotografías de banner se reducen proporcionalmente a un máximo de 1800 px y se convierten a WebP cuando conviene, conservando GIF y SVG. El guardado espera a Firebase y no se puede iniciar mientras hay imágenes subiendo. Las fotos existentes no se modifican: un enlace eliminado o una imagen de error servida por un proveedor externo deberá reemplazarse por el archivo original desde administración.
+
+Verificación local: pruebas de descarga compartida, espera de decodificación y reintento tras error, junto a las pruebas del catálogo y navegación. No se midieron tiempos reales en el teléfono ni se verificó visualmente el despliegue.

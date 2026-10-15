@@ -29,7 +29,7 @@ export function usePosCatalog(companyId: string, enabled: boolean) {
     }));
     return () => { active = false; unsubscribers.forEach(unsubscribe => unsubscribe()); };
   }, [companyId, enabled]);
-  const rows = enabled && inventory.scope === companyId ? inventory.rows : [];
+  const rows = enabled && inventory.scope === companyId && !inventory.loading ? inventory.rows : [];
   const categoryIds = JSON.stringify([...new Set(rows.map(row => row.categoryId).filter(Boolean))].sort());
   const categoryScope = JSON.stringify([companyId, categoryIds]);
   const [categories, setCategories] = useState<{ scope: string; rows: CatalogRow[]; loading: boolean; error: string }>({ scope: '', rows: [], loading: false, error: '' });

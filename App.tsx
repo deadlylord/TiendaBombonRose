@@ -19,6 +19,7 @@ import {
 } from './components/Icons';
 
 import StoreLoader from './components/StoreLoader';
+import BannerCarousel from './components/BannerCarousel';
 import StoreLogo from './components/StoreLogo';
 import CategoryNav from './components/CategoryNav';
 import CatalogControls from './components/CatalogControls';
@@ -173,7 +174,12 @@ const App: React.FC = () => {
     const [branches, _areBranchesLoading] = useFirestoreCollectionSync<StoreBranch>('branches');
     const [users, areUsersLoading] = useFirestoreCollectionSync<User>('users', privateEnabled && userData?.role === 'admin', currentUser?.uid);
     const [cart, setCart] = useBrowserStorage<CartItem[]>(`storeCart:${companyId}`, []);
-    const products = useMemo(() => buildCatalog(posInventory, posCategories, productExtensions, companyId), [posInventory, posCategories, productExtensions, companyId]);
+    const isCatalogLoading = isConfigLoading || areProductsLoading || areExtensionsLoading;
+    const builtProducts = useMemo(() => buildCatalog(posInventory, posCategories, productExtensions, companyId), [posInventory, posCategories, productExtensions, companyId]);
+    const lastCompleteCatalog = useRef<{ companyId: string; products: Product[] } | null>(null);
+    if (!isCatalogLoading) lastCompleteCatalog.current = { companyId, products: builtProducts };
+    const products = !isCatalogLoading ? builtProducts : lastCompleteCatalog.current?.companyId === companyId ? lastCompleteCatalog.current.products : [];
+
     // Only show populated categories; local aliases must not add empty categories.
     const categories = useMemo(() => orderCategories(products.map(product => product.category)), [products]);
     // UI State
@@ -202,7 +208,7 @@ const App: React.FC = () => {
     // Admin State
     const [editMode, setEditMode] = useState(false);
 
-    const isAppLoading = isConfigLoading || areBannersLoading || areProductsLoading || areExtensionsLoading;
+    const isAppLoading = isConfigLoading;
     const previousCompany = useRef(companyId);
     useEffect(() => {
         if (previousCompany.current !== companyId) {
@@ -261,7 +267,7 @@ const App: React.FC = () => {
             const product = (products || []).find(p => p.id === productId);
             if (product) {
                 setSelectedProduct(product);
-            } else if (!areProductsLoading) {
+            } else if (!isCatalogLoading) {
                 navigate('/'); // Product not found
             }
         } else {
@@ -276,7 +282,7 @@ const App: React.FC = () => {
 
         // Handle Checkout/Invoice Modal
         setInvoiceModalOpen(isCheckoutRoute);
-    }, [currentPath, products, areProductsLoading]);
+    }, [currentPath, products, isCatalogLoading]);
 
     const navigate = (path: string) => navigation.current?.navigate(path);
     const closeModal = () => navigation.current?.close();
@@ -606,8 +612,12 @@ const App: React.FC = () => {
             throw error;
         }
     };
-    const handleSaveBanners = (newBanners: Banner[]) => { setBannersDoc({ list: newBanners }); showToast("Banners principales guardados."); };
-    const handleSaveMenBanners = (newBanners: Banner[]) => { setMenBannersDoc({ list: newBanners }); showToast("Banners de hombre guardados."); };
+    const handleSaveBanners = async (newBanners: Banner[]) => {
+        await setBannersDoc({ list: newBanners }); showToast("Banners principales guardados.");
+    };
+    const handleSaveMenBanners = async (newBanners: Banner[]) => {
+        await setMenBannersDoc({ list: newBanners }); showToast("Banners de hombre guardados.");
+    };
     const handleSaveCategories = (newCategories: Category[]) => { setCategoriesDoc({ list: newCategories }); showToast("Categorías guardadas."); };
 
     const handleAddProduct = async (newProduct: Product) => {
@@ -680,7 +690,7 @@ const App: React.FC = () => {
         const popup = window.open('about:blank', '_blank');
         if (popup) popup.opener = null;
         try {
-            if (catalogError || areProductsLoading) throw new Error('Espera a que se actualice el catálogo.');
+            if (catalogError || isCatalogLoading) throw new Error('Espera a que se actualice el catálogo.');
             const items = validateCart(orderData.items, products);
             const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
             if (Math.abs(subtotal - orderData.subtotal) > 0.01) throw new Error('Cambió el precio de una prenda. Vuelve al carrito y agrégala nuevamente para revisar el total.');
@@ -828,89 +838,6 @@ const App: React.FC = () => {
         </div>
     );
 
-    const ProductCarousel: React.FC<{ title: string; products: Product[] }> = ({ title, products: carouselProducts }) => {
-        const scrollContainerRef = useRef<HTMLDivElement>(null);
-        const intervalRef = useRef<number | null>(null);
-
-        const manualScroll = (direction: 'left' | 'right') => {
-            if (scrollContainerRef.current) {
-                const scrollAmount = scrollContainerRef.current.offsetWidth * 0.8;
-                scrollContainerRef.current.scrollBy({
-                    left: direction === 'left' ? -scrollAmount : scrollAmount,
-                    behavior: 'smooth'
-                });
-            }
-        };
-
-        const stopAutoScroll = () => {
-            if (intervalRef.current) {
-                clearInterval(intervalRef.current);
-                intervalRef.current = null;
-            }
-        };
-
-        const startAutoScroll = useCallback(() => {
-            stopAutoScroll();
-            if (scrollContainerRef.current && scrollContainerRef.current.scrollWidth > scrollContainerRef.current.clientWidth) {
-                intervalRef.current = window.setInterval(() => {
-                    if (scrollContainerRef.current) {
-                        const { scrollLeft, scrollWidth, clientWidth } = scrollContainerRef.current;
-                        if (scrollLeft + clientWidth >= scrollWidth - 1) {
-                            scrollContainerRef.current.scrollTo({ left: 0, behavior: 'smooth' });
-                        } else {
-                            scrollContainerRef.current.scrollBy({ left: clientWidth * 0.8, behavior: 'smooth' });
-                        }
-                    }
-                }, 4000);
-            }
-        }, [carouselProducts]);
-
-        useEffect(() => {
-            const timer = setTimeout(() => startAutoScroll(), 500);
-            return () => {
-                clearTimeout(timer);
-                stopAutoScroll();
-            }
-        }, [startAutoScroll]);
-
-        if (!carouselProducts || carouselProducts.length === 0) return null;
-
-        return (
-          <section className="py-12 bg-white">
-            <div className="max-w-7xl 2xl:max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
-              <h2 className="text-3xl font-serif text-center mb-8 text-on-surface">{title}</h2>
-              <div
-                className="relative group/carousel"
-                onMouseEnter={stopAutoScroll}
-                onMouseLeave={startAutoScroll}
-              >
-                  <button onClick={() => manualScroll('left')} className="absolute left-0 top-1/2 -translate-y-1/2 z-10 bg-white/80 backdrop-blur-sm rounded-full p-2 shadow-md hover:bg-white transition-all opacity-0 group-hover/carousel:opacity-100 disabled:opacity-0" aria-label="Anterior">
-                      <ChevronLeftIcon className="w-6 h-6 text-on-surface" />
-                  </button>
-                  <div ref={scrollContainerRef} className="flex overflow-x-auto space-x-6 pb-4 -mx-4 px-4 scrollbar-hide">
-                      {carouselProducts.map(product => (
-                          <div key={product.id} className="flex-shrink-0 w-64 sm:w-72">
-                              <ProductCard
-                                  product={product}
-                                  onOpenDetails={handleOpenProductDetails}
-                                  onQuickAdd={handleQuickAddToCart}
-                                  editMode={editMode}
-                                  userRole={userData?.role}
-                                  onOpenEdit={handleOpenProductEdit}
-                                  formatCurrency={formatCurrency}
-                              />
-                          </div>
-                      ))}
-                  </div>
-                  <button onClick={() => manualScroll('right')} className="absolute right-0 top-1/2 -translate-y-1/2 z-10 bg-white/80 backdrop-blur-sm rounded-full p-2 shadow-md hover:bg-white transition-all opacity-0 group-hover/carousel:opacity-100 disabled:opacity-0" aria-label="Siguiente">
-                      <ChevronRightIcon className="w-6 h-6 text-on-surface" />
-                  </button>
-              </div>
-            </div>
-          </section>
-        );
-    };
-
     // --- RENDER ADMIN OR LOGIN VIEW ---
     const renderAdminView = () => {
         if (!isAdminOpen) return null;
@@ -1000,7 +927,7 @@ const App: React.FC = () => {
                 images={config.categoryImagesByCompany?.[companyId]}
                 onSelectCategory={handleCategoryButtonClick}
               />}
-              <AnimatePresence mode="wait">
+              <AnimatePresence initial={false} mode="wait">
                 {isSearching ? (
                   <motion.section
                     key="search"
@@ -1048,7 +975,7 @@ const App: React.FC = () => {
                             </h3>
 
                             {catalogControls}
-                            <ProductGrid
+                            <ProductGrid loading={isCatalogLoading && products.length === 0}
                                 products={filteredProducts}
                                 resultKey={JSON.stringify(catalogFilters)}
                                 onOpenDetails={handleOpenProductDetails}
@@ -1072,19 +999,20 @@ const App: React.FC = () => {
                     transition={{ duration: 0.3 }}
                   >
                     <BannerCarousel
-                        banners={isMenTheme ? menBanners : banners}
+                        banners={areBannersLoading ? [] : isMenTheme ? menBanners : banners}
+                        loading={areBannersLoading}
                         onNavigateToCategory={(cat) => handleCategoryButtonClick(cat as Category)}
                         isMenTheme={isMenTheme}
                     />
 
-                    <CategoryNav
+                    {isCatalogLoading && products.length === 0 ? <div role="status" className="mx-auto flex h-64 max-w-7xl items-center justify-center p-8 text-center text-sm text-gray-500">Cargando las prendas…</div> : <CategoryNav
                         categories={categories} products={products} selectedCategory={selectedCategory}
                         images={config.categoryImagesByCompany?.[companyId]}
                         onSelectCategory={handleCategoryButtonClick}
-                    />
+                    />}
 
-                    <ProductCarousel title="Recién llegados ✨🆕" products={newArrivals} />
-                    <ProductCarousel title="En tendencia 🔥📱" products={bestSellers} />
+                    <ProductCarousel onOpenDetails={handleOpenProductDetails} onQuickAdd={handleQuickAddToCart} editMode={editMode} userRole={userData?.role} onOpenEdit={handleOpenProductEdit} formatCurrency={formatCurrency} title="Recién llegados ✨🆕" products={newArrivals} />
+                    <ProductCarousel onOpenDetails={handleOpenProductDetails} onQuickAdd={handleQuickAddToCart} editMode={editMode} userRole={userData?.role} onOpenEdit={handleOpenProductEdit} formatCurrency={formatCurrency} title="En tendencia 🔥📱" products={bestSellers} />
                     <div className="pb-12 text-center"><button type="button" className="rounded-full bg-primary px-8 py-4 font-semibold text-white hover:bg-primary-dark" onClick={() => handleCatalogFilters({ term: '', category: 'All', size: '', color: '', sort: 'recent' })}>Ver todos los productos</button></div>
                   </motion.div>
                 ) : (
@@ -1122,7 +1050,7 @@ const App: React.FC = () => {
                             transition={{ delay: 0.4, duration: 0.5 }}
                         >
                             {catalogControls}
-                            <ProductGrid
+                            <ProductGrid loading={isCatalogLoading && products.length === 0}
                                 products={filteredProducts}
                                 resultKey={JSON.stringify(catalogFilters)}
                                 onOpenDetails={handleOpenProductDetails}
@@ -1179,6 +1107,84 @@ const App: React.FC = () => {
 };
 
 // --- SUB-COMPONENTS ---
+
+const ProductCarousel: React.FC<Omit<React.ComponentProps<typeof ProductCard>, 'product'> & { title: string; products: Product[] }> = ({ title, products: carouselProducts, ...cardProps }) => {
+        const scrollContainerRef = useRef<HTMLDivElement>(null);
+        const intervalRef = useRef<number | null>(null);
+
+        const manualScroll = (direction: 'left' | 'right') => {
+            if (scrollContainerRef.current) {
+                const scrollAmount = scrollContainerRef.current.offsetWidth * 0.8;
+                scrollContainerRef.current.scrollBy({
+                    left: direction === 'left' ? -scrollAmount : scrollAmount,
+                    behavior: 'smooth'
+                });
+            }
+        };
+
+        const stopAutoScroll = () => {
+            if (intervalRef.current) {
+                clearInterval(intervalRef.current);
+                intervalRef.current = null;
+            }
+        };
+
+        const startAutoScroll = useCallback(() => {
+            stopAutoScroll();
+            if (scrollContainerRef.current && scrollContainerRef.current.scrollWidth > scrollContainerRef.current.clientWidth) {
+                intervalRef.current = window.setInterval(() => {
+                    if (scrollContainerRef.current) {
+                        const { scrollLeft, scrollWidth, clientWidth } = scrollContainerRef.current;
+                        if (scrollLeft + clientWidth >= scrollWidth - 1) {
+                            scrollContainerRef.current.scrollTo({ left: 0, behavior: 'smooth' });
+                        } else {
+                            scrollContainerRef.current.scrollBy({ left: clientWidth * 0.8, behavior: 'smooth' });
+                        }
+                    }
+                }, 4000);
+            }
+        }, [carouselProducts]);
+
+        useEffect(() => {
+            const timer = setTimeout(() => startAutoScroll(), 500);
+            return () => {
+                clearTimeout(timer);
+                stopAutoScroll();
+            }
+        }, [startAutoScroll]);
+
+        if (!carouselProducts || carouselProducts.length === 0) return null;
+
+        return (
+          <section className="py-12 bg-white">
+            <div className="max-w-7xl 2xl:max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
+              <h2 className="text-3xl font-serif text-center mb-8 text-on-surface">{title}</h2>
+              <div
+                className="relative group/carousel"
+                onMouseEnter={stopAutoScroll}
+                onMouseLeave={startAutoScroll}
+              >
+                  <button onClick={() => manualScroll('left')} className="absolute left-0 top-1/2 -translate-y-1/2 z-10 bg-white/80 backdrop-blur-sm rounded-full p-2 shadow-md hover:bg-white transition-all opacity-0 group-hover/carousel:opacity-100 disabled:opacity-0" aria-label="Anterior">
+                      <ChevronLeftIcon className="w-6 h-6 text-on-surface" />
+                  </button>
+                  <div ref={scrollContainerRef} className="flex overflow-x-auto space-x-6 pb-4 -mx-4 px-4 scrollbar-hide">
+                      {carouselProducts.map(product => (
+                          <div key={product.id} className="flex-shrink-0 w-64 sm:w-72">
+                              <ProductCard
+                                  product={product}
+                                  {...cardProps}
+                              />
+                          </div>
+                      ))}
+                  </div>
+                  <button onClick={() => manualScroll('right')} className="absolute right-0 top-1/2 -translate-y-1/2 z-10 bg-white/80 backdrop-blur-sm rounded-full p-2 shadow-md hover:bg-white transition-all opacity-0 group-hover/carousel:opacity-100 disabled:opacity-0" aria-label="Siguiente">
+                      <ChevronRightIcon className="w-6 h-6 text-on-surface" />
+                  </button>
+              </div>
+            </div>
+          </section>
+        );
+    };
 
 const ProductCard: React.FC<{
     product: Product;
@@ -1242,6 +1248,7 @@ const ProductCard: React.FC<{
 
 
 const ProductGrid: React.FC<{
+    loading?: boolean;
     products: Product[];
     resultKey: string;
     onOpenDetails: (p: Product) => void;
@@ -1250,9 +1257,10 @@ const ProductGrid: React.FC<{
     userRole?: string;
     onOpenEdit: (p: Product) => void;
     formatCurrency: (n: number) => string;
-}> = ({ products, resultKey, onOpenDetails, onQuickAdd, editMode, userRole, onOpenEdit, formatCurrency }) => {
+}> = ({ loading, products, resultKey, onOpenDetails, onQuickAdd, editMode, userRole, onOpenEdit, formatCurrency }) => {
     const [page, setPage] = useState({ key: resultKey, count: 24 });
     const visibleCount = page.key === resultKey ? page.count : 24;
+    if (loading) return <div role="status" className="py-16 text-center text-gray-500">Cargando las prendas…</div>;
     if (products.length === 0) {
         return (
             <div className="col-span-full py-20 text-center">
@@ -1620,63 +1628,6 @@ const AnnouncementBar: React.FC<{ announcements: string[]; isMenTheme?: boolean 
                     ))}
                 </div>
             )}
-        </div>
-    );
-};
-
-const BannerCarousel: React.FC<{ banners: Banner[]; onNavigateToCategory: (category: Category) => void; isMenTheme?: boolean; }> = ({ banners, onNavigateToCategory, isMenTheme }) => {
-    const [currentIndex, setCurrentIndex] = useState(0);
-
-    const nextBanner = useCallback(() => {
-        if (!banners || banners.length === 0) return;
-        setCurrentIndex(prev => (prev + 1) % banners.length);
-    }, [banners]);
-
-    const prevBanner = () => {
-        if (!banners || banners.length === 0) return;
-        setCurrentIndex(prev => (prev - 1 + banners.length) % banners.length);
-    };
-
-    useEffect(() => {
-        if(!banners || banners.length <= 1) return;
-        const timer = setInterval(nextBanner, 5000);
-        return () => clearInterval(timer);
-    }, [nextBanner, banners]);
-
-    const handleBannerClick = (e: React.MouseEvent<HTMLAnchorElement>, banner: Banner) => {
-        if (banner.link.startsWith('category:')) {
-            e.preventDefault();
-            const category = banner.link.split(':')[1];
-            onNavigateToCategory(category as Category);
-        }
-    };
-
-    if (!banners || banners.length === 0) {
-        return <div className={`h-[520px] sm:h-[480px] md:h-[500px] flex items-center justify-center ${isMenTheme ? 'bg-black text-gray-400' : 'bg-gray-200 text-gray-500'}`}>No hay banners para mostrar.</div>;
-    }
-
-    return (
-        <div className={`relative w-full h-[520px] sm:h-[480px] md:h-[500px] overflow-hidden ${isMenTheme ? 'bg-black' : 'bg-gray-100'}`}>
-            {banners.map((banner, index) => (
-                <div key={banner.id} className={`absolute inset-0 transition-opacity duration-1000 ${index === currentIndex ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
-                    <img src={banner.imageUrl} alt={banner.title} className="w-full h-full object-cover" />
-                    <div className="absolute inset-0 bg-black/20 flex flex-col items-center justify-center text-center text-white p-4">
-                        <h2 className={`text-4xl md:text-6xl font-serif ${isMenTheme ? 'cyber-gradient-text' : ''}`}>{banner.title}</h2>
-                        <p className="mt-2 text-lg md:text-xl">{banner.subtitle}</p>
-                        <a
-                           href={banner.link.startsWith('category:') ? '#productos' : banner.link}
-                           onClick={(e) => handleBannerClick(e, banner)}
-                           className={`mt-6 px-8 py-3 rounded-full font-semibold transition-colors duration-300 shadow-lg ${isMenTheme ? 'cyber-gradient-bg text-white' : 'bg-primary text-white hover:bg-primary-dark'}`}
-                        >
-                            Ver Colección
-                        </a>
-                    </div>
-                </div>
-            ))}
-            {banners.length > 1 && <>
-              <button onClick={prevBanner} className="absolute left-4 top-1/2 -translate-y-1/2 bg-white/50 text-black p-2 rounded-full hover:bg-white"><ChevronLeftIcon className="w-6 h-6" /></button>
-              <button onClick={nextBanner} className="absolute right-4 top-1/2 -translate-y-1/2 bg-white/50 text-black p-2 rounded-full hover:bg-white"><ChevronRightIcon className="w-6 h-6" /></button>
-            </>}
         </div>
     );
 };

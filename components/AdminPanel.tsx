@@ -30,7 +30,8 @@ const ImageUpload: React.FC<{
     onImageSelect: (url: string) => void;
     label: string;
     onUploadingChange?: (uploading: boolean) => void;
-}> = ({ currentImage, onImageSelect, label, onUploadingChange }) => {
+    optimizeBanner?: boolean;
+}> = ({ currentImage, onImageSelect, label, onUploadingChange, optimizeBanner = false }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [isUploading, setIsUploading] = useState(false);
 
@@ -40,7 +41,7 @@ const ImageUpload: React.FC<{
             setIsUploading(true);
             onUploadingChange?.(true);
             try {
-                const imageUrl = await uploadImageToStorage(file);
+                const imageUrl = await uploadImageToStorage(file, optimizeBanner);
                 onImageSelect(imageUrl);
             } catch (error) {
                 console.error("Error uploading image:", error);
@@ -88,8 +89,8 @@ interface AdminPanelProps {
         branches: StoreBranch[];
     };
     onUpdateConfig: (config: StoreConfig) => Promise<void> | void;
-    onSaveBanners: (banners: Banner[]) => void;
-    onSaveMenBanners: (banners: Banner[]) => void;
+    onSaveBanners: (banners: Banner[]) => Promise<void> | void;
+    onSaveMenBanners: (banners: Banner[]) => Promise<void> | void;
     onSaveCategories: (categories: Category[]) => void;
     onAddProduct: (product: Product) => Promise<boolean>;
     onUpdateProduct: (product: Product) => Promise<boolean>;
@@ -658,9 +659,18 @@ const AdminBannersTab: React.FC<{
     banners: Banner[], 
     menBanners: Banner[],
     categories: Category[],
-    onSaveBanners: (b: Banner[]) => void,
-    onSaveMenBanners: (b: Banner[]) => void
+    onSaveBanners: (b: Banner[]) => Promise<void> | void,
+    onSaveMenBanners: (b: Banner[]) => Promise<void> | void
 }> = ({ banners, menBanners, categories, onSaveBanners, onSaveMenBanners }) => {
+    const [uploadCount, setUploadCount] = useState(0);
+    const [saving, setSaving] = useState(false);
+    const [saveError, setSaveError] = useState('');
+    const save = async (men: boolean) => {
+        setSaving(true); setSaveError('');
+        try { await (men ? onSaveMenBanners(localMenBanners) : onSaveBanners(localBanners)); }
+        catch { setSaveError('No se guardaron los banners. Intenta nuevamente.'); }
+        finally { setSaving(false); }
+    };
     const [localBanners, setLocalBanners] = useState<Banner[]>(banners || []);
     const [localMenBanners, setLocalMenBanners] = useState<Banner[]>(menBanners || []);
     
@@ -703,19 +713,22 @@ const AdminBannersTab: React.FC<{
 
     return (
          <div className="p-6 space-y-12">
+            <p className="rounded-xl bg-pink-50 p-4 text-sm text-pink-900">Para celular recomendamos banners verticales de 1200 × 1800 px (2:3). La tienda muestra la imagen completa, sin recortarla. Las nuevas fotos se optimizan al subirlas; utiliza archivos originales disponibles para evitar enlaces rotos.</p>
+            {saveError && <p role="alert" className="text-red-700">{saveError}</p>}
+            {(uploadCount > 0 || saving) && <p role="status" className="text-sm text-pink-700">{uploadCount > 0 ? 'Subiendo imágenes…' : 'Guardando banners…'}</p>}
             {/* Standard Banners */}
             <div>
                 <div className="flex justify-between items-center mb-6">
                     <h1 className="text-2xl font-bold">Banners Principales (Bombon)</h1>
                     <div>
                         <button onClick={() => addBanner(false)} className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 mr-2">Agregar Banner</button>
-                        <button onClick={() => onSaveBanners(localBanners)} className="bg-green-500 text-white px-4 py-2 rounded-md hover:bg-green-600">Guardar Banners</button>
+                        <button disabled={saving || uploadCount > 0} onClick={() => void save(false)} className="bg-green-500 text-white px-4 py-2 rounded-md hover:bg-green-600">Guardar Banners</button>
                     </div>
                 </div>
                 <div className="space-y-6">
                     {localBanners.map(banner => (
                         <div key={banner.id} className="bg-white rounded-lg shadow p-4 grid grid-cols-1 md:grid-cols-3 gap-4 relative">
-                            <ImageUpload label="Imagen del Banner" currentImage={banner.imageUrl} onImageSelect={url => updateBanner(banner.id, 'imageUrl', url, false)} />
+                            <ImageUpload onUploadingChange={active => setUploadCount(count => count + (active ? 1 : -1))} optimizeBanner label="Imagen del Banner" currentImage={banner.imageUrl} onImageSelect={url => updateBanner(banner.id, 'imageUrl', url, false)} />
                             <div className="md:col-span-2 space-y-4">
                                 <AdminInput label="Título" value={banner.title} onChange={e => updateBanner(banner.id, 'title', e.target.value, false)} />
                                 <AdminInput label="Subtítulo" value={banner.subtitle} onChange={e => updateBanner(banner.id, 'subtitle', e.target.value, false)} />
@@ -742,13 +755,13 @@ const AdminBannersTab: React.FC<{
                     <h1 className="text-2xl font-bold">Banners Hombre (Street Legends)</h1>
                     <div>
                         <button onClick={() => addBanner(true)} className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 mr-2">Agregar Banner</button>
-                        <button onClick={() => onSaveMenBanners(localMenBanners)} className="bg-green-500 text-white px-4 py-2 rounded-md hover:bg-green-600">Guardar Banners</button>
+                        <button disabled={saving || uploadCount > 0} onClick={() => void save(true)} className="bg-green-500 text-white px-4 py-2 rounded-md hover:bg-green-600">Guardar Banners</button>
                     </div>
                 </div>
                 <div className="space-y-6">
                     {localMenBanners.map(banner => (
                         <div key={banner.id} className="bg-black text-white rounded-lg shadow p-4 grid grid-cols-1 md:grid-cols-3 gap-4 relative border border-gray-800">
-                            <ImageUpload label="Imagen del Banner" currentImage={banner.imageUrl} onImageSelect={url => updateBanner(banner.id, 'imageUrl', url, true)} />
+                            <ImageUpload onUploadingChange={active => setUploadCount(count => count + (active ? 1 : -1))} optimizeBanner label="Imagen del Banner" currentImage={banner.imageUrl} onImageSelect={url => updateBanner(banner.id, 'imageUrl', url, true)} />
                             <div className="md:col-span-2 space-y-4">
                                 <AdminInput label="Título" value={banner.title} onChange={e => updateBanner(banner.id, 'title', e.target.value, true)} />
                                 <AdminInput label="Subtítulo" value={banner.subtitle} onChange={e => updateBanner(banner.id, 'subtitle', e.target.value, true)} />
