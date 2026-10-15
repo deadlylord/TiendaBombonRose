@@ -54,4 +54,8 @@ Abrir una ficha conserva la búsqueda o categoría debajo, incluidos filtros y p
 
 ## Carga inicial (0.4.2)
 
-El HTML incluye una pantalla de carga con estilos y animaciones críticos, visibles antes de descargar JavaScript. React usa la misma pantalla mientras descarga la aplicación y consulta el catálogo. Los estilos completos se cargan con el módulo de la aplicación y las fuentes externas no bloquean la pantalla inicial. La animación respeta la preferencia de movimiento reducido; no se añaden consultas ni una espera mínima. Si falla la descarga del módulo de la tienda, se muestra un aviso con un botón para volver a intentar.
+El HTML incluye una pantalla de carga con estilos y animaciones críticos, visibles antes de descargar JavaScript. React usa la misma pantalla mientras descarga la aplicación y consulta el catálogo. Los estilos completos se cargan con el módulo de la aplicación y las fuentes externas no bloquean la pantalla inicial. Con movimiento reducido el círculo gira más despacio; no se añaden consultas ni una espera mínima. Si falla la descarga del módulo de la tienda, se muestra un aviso con un botón para volver a intentar.
+
+## Círculo de carga (0.4.3)
+
+Se restaura el diseño anterior: fondo blanco, círculo rosa de 40 px y «Descubre tu próximo outfit». El giro tiene una duración propia para evitar que la regla global de movimiento reducido lo acelere a 0,01 ms y parezca inmóvil. Con esa preferencia el giro se ralentiza a dos segundos.
