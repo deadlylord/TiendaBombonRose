@@ -991,12 +991,13 @@ const App: React.FC = () => {
                 config={config}
             />
 
-            <div className={`transition-all ${hasAnnouncements ? 'h-32 sm:h-36' : 'h-24 sm:h-28'}`} />
+            <div className={`transition-all ${hasAnnouncements ? 'h-28 sm:h-32' : 'h-20 sm:h-24'}`} />
             {catalogError && <div role="alert" className="mx-auto max-w-3xl my-6 p-4 bg-rose-50 text-rose-900 rounded-lg text-center">{catalogError}</div>}
 
-            <main className="pt-4 sm:pt-6">
+            <main>
               {(isSearching || selectedCategory !== 'All') && <CategoryNav
                 categories={categories} products={products} selectedCategory={selectedCategory}
+                images={config.categoryImagesByCompany?.[companyId]}
                 onSelectCategory={handleCategoryButtonClick}
               />}
               <AnimatePresence mode="wait">
@@ -1078,6 +1079,7 @@ const App: React.FC = () => {
 
                     <CategoryNav
                         categories={categories} products={products} selectedCategory={selectedCategory}
+                        images={config.categoryImagesByCompany?.[companyId]}
                         onSelectCategory={handleCategoryButtonClick}
                     />
 
@@ -1476,11 +1478,11 @@ const Header: React.FC<{
 
     return (
         <>
-            <header className={`fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-sm shadow-md transition-all flex flex-col ${hasAnnouncements ? 'h-32 sm:h-36' : 'h-24 sm:h-28'}`}>
+            <header className={`fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-sm shadow-md transition-all flex flex-col ${hasAnnouncements ? 'h-28 sm:h-32' : 'h-20 sm:h-24'}`}>
                 {hasAnnouncements && (
                     <AnnouncementBar announcements={config.announcements || []} isMenTheme={isMenTheme} />
                 )}
-                <div className="max-w-7xl 2xl:max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 w-full h-24 sm:h-28 shrink-0">
+                <div className="max-w-7xl 2xl:max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 w-full h-20 sm:h-24 shrink-0">
                     <div className="grid grid-cols-[84px_minmax(0,1fr)_84px] items-center gap-1 h-full">
                         <div className="flex-1 flex justify-start">
                             <button
@@ -1495,7 +1497,6 @@ const Header: React.FC<{
                         <div className="min-w-0 flex justify-center">
                             <a href="#" onClick={handleLogoClick} aria-label="Volver al inicio" className="w-full max-w-[220px] sm:max-w-[260px] flex flex-col items-center">
                                 <StoreLogo src={logoUrl} alt={isMenTheme ? 'Street Legends' : 'Bombón'} className="h-16 sm:h-[72px] w-full object-contain" />
-                                <span aria-hidden={isMenTheme} className={`block text-[10px] leading-4 text-primary text-center whitespace-nowrap ${isMenTheme ? 'invisible' : ''}`}>Ponte bonita para ti.</span>
                             </a>
                         </div>
 
@@ -2309,7 +2310,6 @@ const Footer: React.FC<{ contact: StoreConfig['contact'], social: StoreConfig['s
         <div className="max-w-7xl 2xl:max-w-screen-2xl mx-auto py-12 px-4 sm:px-6 lg:px-8 grid grid-cols-1 md:grid-cols-3 gap-8">
             <div>
                 <h3 className="font-serif text-lg">Bombon</h3>
-                <p className="mt-2 text-gray-400">Ponte bonita para ti.</p>
             </div>
             <div>
                 <h3 className="font-semibold">Contacto</h3>

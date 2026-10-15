@@ -3,7 +3,8 @@ import { Category, Product } from '../types';
 import { orderCategories } from '../services/categoryOrder';
 import ProductImage from './ProductImage';
 
-export default function CategoryNav({ categories, products, selectedCategory, onSelectCategory }: {
+export default function CategoryNav({ categories, products, selectedCategory, onSelectCategory, images = {} }: {
+  images?: Record<string, string>;
   categories: Category[];
   products: Product[];
   selectedCategory: string;
@@ -16,10 +17,10 @@ export default function CategoryNav({ categories, products, selectedCategory, on
       if (product.imageUrl && !photos.has(product.category)) photos.set(product.category, product.imageUrl);
     }
     return [
-      { name: 'All', label: 'Todo', image: availablePhotos[0]?.imageUrl || products.find(product => product.imageUrl)?.imageUrl },
-      ...orderCategories(categories).map(name => ({ name, label: name, image: photos.get(name) })),
+      { name: 'All', label: 'Todo', image: images.All || availablePhotos[0]?.imageUrl || products.find(product => product.imageUrl)?.imageUrl },
+      ...orderCategories(categories).map(name => ({ name, label: name, image: images[name] || photos.get(name) })),
     ];
-  }, [categories, products]);
+  }, [categories, products, images]);
 
   return <nav aria-label="Explora por categoría" className="border-b border-pink-100 bg-white py-6 sm:py-9">
     <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -31,7 +32,7 @@ export default function CategoryNav({ categories, products, selectedCategory, on
         {entries.map(({ name, label, image }) => {
           const active = selectedCategory === name;
           return <button key={name} type="button" aria-pressed={active} onClick={() => onSelectCategory(name)}
-            className="group w-24 shrink-0 snap-start text-center sm:w-32">
+            className="group w-28 shrink-0 snap-start text-center sm:w-40">
             <span className={`block aspect-square w-full rounded-full border-2 p-1 transition-colors ${active ? 'border-[#E91E8C] bg-pink-50' : 'border-pink-100 group-hover:border-pink-300'}`}>
               <span className="block h-full w-full overflow-hidden rounded-full bg-pink-50">
                 <ProductImage src={image} alt={`Categoría ${label}`} className="h-full w-full object-cover object-top transition-transform duration-300 group-hover:scale-105" />

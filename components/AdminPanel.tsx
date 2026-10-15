@@ -29,7 +29,8 @@ const ImageUpload: React.FC<{
     currentImage: string;
     onImageSelect: (url: string) => void;
     label: string;
-}> = ({ currentImage, onImageSelect, label }) => {
+    onUploadingChange?: (uploading: boolean) => void;
+}> = ({ currentImage, onImageSelect, label, onUploadingChange }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [isUploading, setIsUploading] = useState(false);
 
@@ -37,6 +38,7 @@ const ImageUpload: React.FC<{
         if (e.target.files && e.target.files[0]) {
             const file = e.target.files[0];
             setIsUploading(true);
+            onUploadingChange?.(true);
             try {
                 const imageUrl = await uploadImageToStorage(file);
                 onImageSelect(imageUrl);
@@ -45,6 +47,7 @@ const ImageUpload: React.FC<{
                 alert("Hubo un error al subir la imagen. Por favor, inténtalo de nuevo.");
             } finally {
                 setIsUploading(false);
+                onUploadingChange?.(false);
             }
         }
     };
@@ -84,7 +87,7 @@ interface AdminPanelProps {
         users: User[];
         branches: StoreBranch[];
     };
-    onUpdateConfig: (config: StoreConfig) => void;
+    onUpdateConfig: (config: StoreConfig) => Promise<void> | void;
     onSaveBanners: (banners: Banner[]) => void;
     onSaveMenBanners: (banners: Banner[]) => void;
     onSaveCategories: (categories: Category[]) => void;
@@ -199,6 +202,8 @@ const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                             products={props.store.products}
                             onUpdateProduct={onUpdateProduct}
                             onSave={onSaveCategories}
+                            images={props.store.config.categoryImagesByCompany?.[catalogCompany(props.store.config)]}
+                            onSaveImages={async images => { await onUpdateConfig({ ...props.store.config, categoryImagesByCompany: { ...props.store.config.categoryImagesByCompany, [catalogCompany(props.store.config)]: images } }); }}
                         /> : null;
             case 'Banners':
                 return isAdmin ? <AdminBannersTab 
@@ -423,12 +428,62 @@ const AdminProductsTab: React.FC<{
 };
 
 
+const CategoryImageEditor: React.FC<{
+    categories: Category[];
+    products: Product[];
+    images?: Record<string, string>;
+    onSave: (images: Record<string, string>) => Promise<void>;
+}> = ({ categories, products, images, onSave }) => {
+    const [draft, setDraft] = useState<Record<string, string>>(images || {});
+    const [saving, setSaving] = useState(false);
+    const [uploads, setUploads] = useState(0);
+    const [error, setError] = useState('');
+    const [saved, setSaved] = useState(false);
+    useEffect(() => { setDraft(images || {}); }, [images]);
+    const changeImage = (category: string, url: string) => {
+        setDraft(previous => ({ ...previous, [category]: url }));
+        setSaved(false);
+    };
+    const save = async () => {
+        setSaving(true); setError(''); setSaved(false);
+        try { await onSave(draft); setSaved(true); }
+        catch { setError('No se guardaron las imágenes. Intenta de nuevo.'); }
+        finally { setSaving(false); }
+    };
+    return <section className="mb-8 rounded-3xl border border-pink-100 bg-white p-5 sm:p-8">
+        <h2 className="text-lg font-bold">Imágenes de los círculos</h2>
+        <p className="mt-2 mb-6 text-sm text-gray-600">Elige una foto del catálogo o sube una imagen para cada categoría, incluido Todo. Estas imágenes solo cambian los círculos de la tienda.</p>
+        <fieldset disabled={saving} className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
+            {['All', ...categories].map(category => {
+                const options = products.filter(product => product.imageUrl && (category === 'All' || product.category === category));
+                const automatic = options.find(product => product.available)?.imageUrl || options[0]?.imageUrl || '';
+                return <div key={category} className="min-w-0 space-y-3 rounded-2xl bg-pink-50/50 p-4">
+                    <ImageUpload label={category === 'All' ? 'Todo' : category} currentImage={draft[category] || automatic} onImageSelect={url => changeImage(category, url)} onUploadingChange={active => setUploads(count => count + (active ? 1 : -1))} />
+                    <label className="block text-sm">Foto del catálogo
+                        <select value={draft[category] || ''} onChange={event => changeImage(category, event.target.value)} className="mt-1 w-full min-w-0 rounded-lg border bg-white p-2">
+                            <option value="">Automática</option>
+                            {draft[category] && !options.some(product => product.imageUrl === draft[category]) && <option value={draft[category]}>Imagen subida</option>}
+                            {options.map(product => <option key={product.id} value={product.imageUrl}>{product.name}</option>)}
+                        </select>
+                    </label>
+                    <button type="button" onClick={() => changeImage(category, '')} className="text-xs text-pink-700 underline">Usar imagen automática</button>
+                </div>;
+            })}
+        </fieldset>
+        {error && <p role="alert" className="mt-4 text-sm text-red-700">{error}</p>}
+        {saved && <p role="status" className="mt-4 text-sm text-green-700">Imágenes guardadas.</p>}
+        <button type="button" disabled={saving || uploads > 0} onClick={save} className="mt-6 rounded-xl bg-primary px-6 py-3 font-semibold text-white disabled:opacity-50">{uploads > 0 ? 'Subiendo imágenes…' : saving ? 'Guardando…' : 'Guardar imágenes'}</button>
+    </section>;
+};
+
 const AdminCategoriesTab: React.FC<{
     categories: Category[], 
     products: Product[],
     onUpdateProduct: (p: Product) => void,
-    onSave: (cats: Category[]) => void
-}> = ({ categories, products, onUpdateProduct, onSave }) => {
+    onSave: (cats: Category[]) => void,
+    images?: Record<string, string>,
+    onSaveImages: (images: Record<string, string>) => Promise<void>
+}> = ({ categories, products, onUpdateProduct, onSave, images, onSaveImages }) => {
     const [localCategories, setLocalCategories] = useState(categories || []);
     const [newCat, setNewCat] = useState('');
     const [managedSpecial, setManagedSpecial] = useState<'featured' | 'newArrival' | null>(null);
@@ -521,6 +576,7 @@ const AdminCategoriesTab: React.FC<{
     return (
         <div className="p-6">
             <h1 className="text-2xl font-bold mb-6">Categorías</h1>
+            <CategoryImageEditor categories={categories} products={products} images={images} onSave={onSaveImages} />
             
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 {/* Standard Categories */}

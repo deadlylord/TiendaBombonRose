@@ -70,3 +70,10 @@ Los logos de Bombón y Street Legends comparten una altura de 64 px en celular y
 El selector aparece debajo del banner del inicio y al comienzo de las categorías y la búsqueda. Muestra fotografías circulares del catálogo, prioriza prendas disponibles y conserva mujer antes de hombre. Se desplaza horizontalmente, con bordes rosados y estado seleccionado accesible, sin nuevas lecturas de Firebase. Ya no queda fijo sobre el contenido.
 
 La pieza de pagos local incluye Addi, Sistecrédito y tarjetas, sin Mercado Pago. Reemplaza la imagen predeterminada anterior incluso en configuraciones guardadas; se conservan otras imágenes personalizadas.
+
+
+## Cabecera, imágenes y carga (0.4.6)
+
+La cabecera usa 80/96 px más 32 px opcionales de anuncios, sin eslogan ni espacio antes del banner. Los círculos miden 112 px en celular y 160 px en escritorio. Admin → Categorías → Imágenes de los círculos permite elegir fotografías del catálogo, subir imágenes o restaurar la selección automática, incluido Todo. Las imágenes se guardan por empresa en la configuración existente; se espera la confirmación de Firebase y se bloquea guardar durante las subidas.
+
+La carga inicial y la de React comparten un carrusel continuo de contornos SVG rosados de prendas en ganchos. La animación no espera recursos externos y se ralentiza con movimiento reducido. El estado de error conserva su botón de reintento.

@@ -79,18 +79,18 @@
       body { margin:0; }
       .store-startup { min-height:100vh; min-height:100dvh; display:flex; align-items:center; justify-content:center; padding:24px; box-sizing:border-box; background:#fff; color:#1f2937; text-align:center; font-family:Poppins,Arial,sans-serif; }
       .store-startup__content { display:flex; flex-direction:column; align-items:center; max-width:340px; }
-      /* Keep a visible turn instead of the global 0.01ms reduced-motion duration. */
-      .store-startup__spinner { display:block; width:40px; height:40px; color:#e91e8c; animation:store-loading-spin 1s linear infinite !important; transform-origin:center; }
-      .store-startup__track { opacity:.25; }
-      .store-startup__segment { opacity:.75; }
+      .store-startup__wardrobe { position:relative; width:280px; max-width:calc(100vw - 48px); height:112px; overflow:hidden; color:#e91e8c; mask-image:linear-gradient(to right,transparent,#000 10%,#000 90%,transparent); }
+      .store-startup__rail { position:absolute; top:8px; left:0; right:0; border-top:1px solid #f48fb1; }
+      .store-startup__carousel { display:flex; width:640px; animation:store-loading-carousel 7s linear infinite !important; }
+      .store-startup__carousel svg { flex:none; }
       .store-startup__message { margin:16px 0 0; font-size:16px; line-height:1.5; }
       .store-startup__retry { margin-top:20px; border:0; border-radius:24px; padding:12px 24px; background:#e91e8c; color:#fff; cursor:pointer; font:inherit; }
-      @keyframes store-loading-spin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }
-      @media (prefers-reduced-motion:reduce) { .store-startup__spinner { animation-duration:2s !important; } }
+      @keyframes store-loading-carousel { from { transform:translateX(0); } to { transform:translateX(-320px); } }
+      @media (prefers-reduced-motion:reduce) { .store-startup__carousel { animation-duration:28s !important; } }
     </style>
 </head>
 <body class="bg-background font-sans text-on-surface">
-    <div id="root"><div class="store-startup" role="status" aria-live="polite" aria-label="Cargando tienda Bombón"><div class="store-startup__content"><svg class="store-startup__spinner" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true"><circle class="store-startup__track" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="store-startup__segment" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><p class="store-startup__message">Descubre tu próximo outfit</p></div></div></div>
+    <div id="root"><div class="store-startup" role="status" aria-live="polite" aria-label="Cargando tienda Bombón"><div class="store-startup__content"><div class="store-startup__wardrobe" aria-hidden="true"><div class="store-startup__rail"></div><div class="store-startup__carousel"><svg width="320" height="112" viewBox="0 0 320 112" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><g transform="translate(4 0)"><path d="M32 21c0-9 12-9 12-2 0 4-6 5-6 9v3L15 43h46L38 31"></path><path d="m23 40-13 8 8 16 9-5-3 38h28l-3-38 9 5 8-16-13-8M30 41q8 11 16 0"></path></g><g transform="translate(84 0)"><path d="M32 21c0-9 12-9 12-2 0 4-6 5-6 9v3L15 43h46L38 31"></path><path d="m28 40-4 17 9 12-16 29h42L43 69l9-12-4-17M33 69h10M28 55q10 9 24 0"></path></g><g transform="translate(164 0)"><path d="M32 21c0-9 12-9 12-2 0 4-6 5-6 9v3L15 43h46L38 31"></path><path d="M23 43h30l4 55H42l-4-34-4 34H19l4-55ZM23 50h30M38 50v14M27 50v8M49 50v8"></path></g><g transform="translate(244 0)"><path d="M32 21c0-9 12-9 12-2 0 4-6 5-6 9v3L15 43h46L38 31"></path><path d="m26 40-13 9-5 38 12 2 6-26-2 34h28l-2-34 6 26 12-2-5-38-13-9M33 41l5 13 5-13M38 54v43M29 77h5M43 77h5"></path></g></svg><svg width="320" height="112" viewBox="0 0 320 112" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><g transform="translate(4 0)"><path d="M32 21c0-9 12-9 12-2 0 4-6 5-6 9v3L15 43h46L38 31"></path><path d="m23 40-13 8 8 16 9-5-3 38h28l-3-38 9 5 8-16-13-8M30 41q8 11 16 0"></path></g><g transform="translate(84 0)"><path d="M32 21c0-9 12-9 12-2 0 4-6 5-6 9v3L15 43h46L38 31"></path><path d="m28 40-4 17 9 12-16 29h42L43 69l9-12-4-17M33 69h10M28 55q10 9 24 0"></path></g><g transform="translate(164 0)"><path d="M32 21c0-9 12-9 12-2 0 4-6 5-6 9v3L15 43h46L38 31"></path><path d="M23 43h30l4 55H42l-4-34-4 34H19l4-55ZM23 50h30M38 50v14M27 50v8M49 50v8"></path></g><g transform="translate(244 0)"><path d="M32 21c0-9 12-9 12-2 0 4-6 5-6 9v3L15 43h46L38 31"></path><path d="m26 40-13 9-5 38 12 2 6-26-2 34h28l-2-34 6 26 12-2-5-38-13-9M33 41l5 13 5-13M38 54v43M29 77h5M43 77h5"></path></g></svg></div></div><p class="store-startup__message">Descubre tu próximo outfit</p></div></div></div>
     <noscript>Activa JavaScript para consultar el catálogo de Bombón.</noscript>
     <script type="module" src="/index.tsx"></script>
 </body>

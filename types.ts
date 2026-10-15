@@ -59,6 +59,7 @@ export interface SocialLinks {
 }
 
 export interface StoreConfig {
+  categoryImagesByCompany?: Record<string, Record<string, string>>;
   inventoryCompanyId?: string;
   logoUrl: string;
   secondLogoUrl?: string;
