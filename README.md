@@ -59,3 +59,7 @@ El HTML incluye una pantalla de carga con estilos y animaciones críticos, visib
 ## Círculo de carga (0.4.3)
 
 Se restaura el diseño anterior: fondo blanco, círculo rosa de 40 px y «Descubre tu próximo outfit». El giro tiene una duración propia para evitar que la regla global de movimiento reducido lo acelere a 0,01 ms y parezca inmóvil. Con esa preferencia el giro se ralentiza a dos segundos.
+
+## Tamaño de logos (0.4.4)
+
+Los logos de Bombón y Street Legends comparten una altura de 64 px en celular y 72 px en pantallas mayores, con sus proporciones originales. El componente `StoreLogo` encuadra las dos imágenes actualmente configuradas para excluir sus márgenes vacíos, sin modificar los archivos originales. Otras imágenes conservan el ajuste estándar. El menú lateral usa el mismo encuadre. La cabecera, su espacio reservado y la posición fija de categorías se ajustan juntos para evitar superposiciones.

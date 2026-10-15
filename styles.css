@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 :root { --primary-rgb: 233 30 140; --primary: #e91e8c; }
-html { scroll-padding-top: 8rem; }
+html { scroll-padding-top: 12rem; }
 body { overflow-x: hidden; }
 button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
 :focus-visible { outline: 2px solid #e91e8c; outline-offset: 3px; }

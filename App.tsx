@@ -19,6 +19,7 @@ import {
 } from './components/Icons';
 
 import StoreLoader from './components/StoreLoader';
+import StoreLogo from './components/StoreLogo';
 import CatalogControls from './components/CatalogControls';
 import ProductImage from './components/ProductImage';
 import { searchCatalog, availableVariantOptions, CatalogFilters, CatalogSort, salePrice } from './services/catalogSearch';
@@ -989,7 +990,7 @@ const App: React.FC = () => {
                 config={config}
             />
 
-            <div className={`transition-all ${hasAnnouncements ? 'h-28' : 'h-20'}`} />
+            <div className={`transition-all ${hasAnnouncements ? 'h-32 sm:h-36' : 'h-24 sm:h-28'}`} />
             {catalogError && <div role="alert" className="mx-auto max-w-3xl my-6 p-4 bg-rose-50 text-rose-900 rounded-lg text-center">{catalogError}</div>}
 
             <CategoryNav
@@ -1473,12 +1474,12 @@ const Header: React.FC<{
 
     return (
         <>
-            <header className={`fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-sm shadow-md transition-all flex flex-col ${hasAnnouncements ? 'h-28' : 'h-20'}`}>
+            <header className={`fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-sm shadow-md transition-all flex flex-col ${hasAnnouncements ? 'h-32 sm:h-36' : 'h-24 sm:h-28'}`}>
                 {hasAnnouncements && (
                     <AnnouncementBar announcements={config.announcements || []} isMenTheme={isMenTheme} />
                 )}
-                <div className="max-w-7xl 2xl:max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 w-full h-20">
-                    <div className="flex items-center justify-between h-full">
+                <div className="max-w-7xl 2xl:max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 w-full h-24 sm:h-28 shrink-0">
+                    <div className="grid grid-cols-[84px_minmax(0,1fr)_84px] items-center gap-1 h-full">
                         <div className="flex-1 flex justify-start">
                             <button
                                 className="text-on-surface hover:text-primary p-2 rounded-full hover:bg-gray-100/50 transition-all active:scale-90"
@@ -1489,10 +1490,10 @@ const Header: React.FC<{
                             </button>
                         </div>
 
-                        <div className="flex-shrink-0">
-                           <a href="#" onClick={handleLogoClick} aria-label="Volver al inicio">
-                                <img src={logoUrl} alt={isMenTheme ? "Street Legends" : "Bombón"} className="h-12 max-w-[150px] object-contain w-auto cursor-pointer mx-auto" />
-                                {!isMenTheme && <span className="block text-[10px] text-primary text-center">Ponte bonita para ti.</span>}
+                        <div className="min-w-0 flex justify-center">
+                            <a href="#" onClick={handleLogoClick} aria-label="Volver al inicio" className="w-full max-w-[220px] sm:max-w-[260px] flex flex-col items-center">
+                                <StoreLogo src={logoUrl} alt={isMenTheme ? 'Street Legends' : 'Bombón'} className="h-16 sm:h-[72px] w-full object-contain" />
+                                <span aria-hidden={isMenTheme} className={`block text-[10px] leading-4 text-primary text-center whitespace-nowrap ${isMenTheme ? 'invisible' : ''}`}>Ponte bonita para ti.</span>
                             </a>
                         </div>
 
@@ -1541,8 +1542,8 @@ const Header: React.FC<{
                 aria-labelledby="mobile-menu-title"
             >
                 <div className="flex justify-between items-center p-4 border-b border-gray-200">
-                     <a href="#" onClick={handleLogoClick} aria-label="Volver al inicio">
-                        <img src={logoUrl} alt="Logo" className="h-10 w-auto" id="mobile-menu-title" />
+                     <a href="#" onClick={handleLogoClick} aria-label="Volver al inicio" className="min-w-0 flex-1 max-w-[220px]">
+                        <StoreLogo src={logoUrl} alt={isMenTheme ? 'Street Legends' : 'Bombón'} className="h-16 w-full object-contain" id="mobile-menu-title" />
                     </a>
                     <button onClick={() => setMobileMenuOpen(false)} className="p-2 text-on-surface rounded-full hover:bg-surface" aria-label="Cerrar menú">
                         <CloseIcon className="w-6 h-6" />
@@ -1583,7 +1584,7 @@ const CategoryNav: React.FC<{
     hasAnnouncements?: boolean;
 }> = ({ categories, selectedCategory, onSelectCategory, isMenTheme, hasAnnouncements }) => {
     return (
-        <nav className={`bg-surface border-b border-gray-200 sticky ${hasAnnouncements ? 'top-[112px]' : 'top-20'} z-40 transition-all`}>
+        <nav className={`bg-surface border-b border-gray-200 sticky ${hasAnnouncements ? 'top-32 sm:top-36' : 'top-24 sm:top-28'} z-40 transition-all`}>
             <div className="max-w-7xl 2xl:max-w-screen-2xl mx-auto overflow-x-auto scrollbar-hide px-4 sm:px-6 lg:px-8">
                 <div className="flex items-center space-x-2 py-3 min-w-full w-max justify-start md:justify-center">
                     <button
