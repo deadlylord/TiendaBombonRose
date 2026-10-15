@@ -93,3 +93,12 @@ Los banners usan un marco vertical 2:3 en celular (8:5 en escritorio), limitado 
 Las nuevas fotografías de banner se reducen proporcionalmente a un máximo de 1800 px y se convierten a WebP cuando conviene, conservando GIF y SVG. El guardado espera a Firebase y no se puede iniciar mientras hay imágenes subiendo. Las fotos existentes no se modifican: un enlace eliminado o una imagen de error servida por un proveedor externo deberá reemplazarse por el archivo original desde administración.
 
 Verificación local: pruebas de descarga compartida, espera de decodificación y reintento tras error, junto a las pruebas del catálogo y navegación. No se midieron tiempos reales en el teléfono ni se verificó visualmente el despliegue.
+
+
+## Ficha y destinos de banners (0.4.9)
+
+La ficha separa fotografías e información en escritorio y usa una vista compacta con foto completa en celular. Nombre, precio, talla, color, cantidad y compra aparecen antes de los detalles y medios de pago. El total y el botón permanecen visibles en una barra inferior móvil. La cantidad se muestra en un único control; las elecciones de talla/color se conservan durante actualizaciones de inventario cuando continúan disponibles. Las imágenes de colores también se incluyen en la galería y los relacionados muestran el precio con descuento. Se conserva el historial al abrir y cerrar prendas.
+
+En Admin → Banners, «Al tocar este banner, abrir» ofrece Todo el catálogo, Una categoría, Una prenda o Un enlace web. La opción de prenda permite buscar por nombre y previsualizar el producto; el destino usa su ID estable. La imagen y el botón del banner ejecutan el mismo destino sin recargar la tienda para categorías o prendas. Los enlaces históricos de categorías siguen funcionando y los destinos incompletos no se guardan.
+
+Verificación: pruebas del catálogo/navegación, decodificación de banners y resolución de destinos (incluidos IDs codificados y categorías con caracteres especiales), TypeScript y compilación. Revisión visual en navegador y publicación de Netlify pendientes.

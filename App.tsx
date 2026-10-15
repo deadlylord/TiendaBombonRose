@@ -3,7 +3,7 @@
 import './styles.css';
 import React, { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from "motion/react";
-import { Product, Category, Banner, StoreConfig, CartItem, Order, ToastMessage, ProductVariantDetail, ProductColorVariantDetail, User, StoreBranch } from './types';
+import { Product, Category, Banner, StoreConfig, CartItem, Order, ToastMessage, User, StoreBranch } from './types';
 import { db, auth } from './services/firebase';
 import { usePosCatalog } from './services/usePosCatalog';
 import { useCatalogExtensions } from './services/useCatalogExtensions';
@@ -15,21 +15,22 @@ import { onAuthStateChanged, getAuth, createUserWithEmailAndPassword, signInWith
 import {
   CartIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, InstagramIcon, MenuIcon,
   SearchIcon, TikTokIcon, WhatsAppIcon, TrashIcon, PlusIcon, MinusIcon,
-  PencilIcon, ShareIcon, HeartIcon, ShoppingBagIcon, ArrowLeftIcon
+  PencilIcon, HeartIcon, ShoppingBagIcon, ArrowLeftIcon
 } from './components/Icons';
 
 import StoreLoader from './components/StoreLoader';
 import BannerCarousel from './components/BannerCarousel';
+import ProductDetails from './components/ProductDetails';
 import StoreLogo from './components/StoreLogo';
 import CategoryNav from './components/CategoryNav';
 import CatalogControls from './components/CatalogControls';
 import ProductImage from './components/ProductImage';
-import { searchCatalog, availableVariantOptions, CatalogFilters, CatalogSort, salePrice } from './services/catalogSearch';
+import { searchCatalog, availableVariantOptions, CatalogFilters, CatalogSort } from './services/catalogSearch';
 import { orderCategories, isMensCategory } from './services/categoryOrder';
 import { createStoreNavigation } from './services/storeNavigation';
 import AdminInput from './components/AdminInput';
 import BranchesSection from './components/BranchesSection';
-import { generateProductDescription, getValidColor } from './services/productTools';
+import { generateProductDescription } from './services/productTools';
 import DeferredPanelBoundary from './components/DeferredPanelBoundary';
 
 const AdminPanel = lazy(() => import('./components/AdminPanel'));
@@ -1001,7 +1002,9 @@ const App: React.FC = () => {
                     <BannerCarousel
                         banners={areBannersLoading ? [] : isMenTheme ? menBanners : banners}
                         loading={areBannersLoading}
-                        onNavigateToCategory={(cat) => handleCategoryButtonClick(cat as Category)}
+                        onNavigateToCategory={category => handleCatalogFilters({ term: '', category, size: '', color: '', sort: 'recent' })}
+                        onNavigateToProduct={id => navigate(`/product/${encodeURIComponent(id)}`)}
+                        onViewCatalog={() => handleCatalogFilters({ term: '', category: 'All', size: '', color: '', sort: 'recent' })}
                         isMenTheme={isMenTheme}
                     />
 
@@ -1088,7 +1091,7 @@ const App: React.FC = () => {
                 config={config}
             />}
             {renderAdminView()}
-            {selectedProduct && selectedProduct.companyId === companyId && <ProductDetailModal product={selectedProduct} onClose={closeModal} onAddToCart={handleAddToCart} formatCurrency={formatCurrency} showToast={showToast} allProducts={products} config={config} onSelectProduct={handleOpenProductDetails} />}
+            {selectedProduct && selectedProduct.companyId === companyId && <ProductDetails key={selectedProduct.id} product={selectedProduct} onClose={closeModal} onAddToCart={handleAddToCart} formatCurrency={formatCurrency} showToast={showToast} allProducts={products} config={config} onSelectProduct={handleOpenProductDetails} />}
             {isInvoiceModalOpen && <InvoiceModal onClose={closeModal} cart={cart} subtotal={cartSubtotal} onSubmitOrder={handleNewOrder} isSubmitting={isOrdering} branches={branches} config={config} formatCurrency={formatCurrency} />}
             {isAddUserModalOpen && <AddUserModal onClose={() => setAddUserModalOpen(false)} onCreateUser={handleCreateUser} />}
 
@@ -1826,293 +1829,6 @@ const CartPanel: React.FC<{
                     </div>
                     </>
                 )}
-            </div>
-        </div>
-    );
-};
-
-const ProductDetailModal: React.FC<{
-    product: Product, onClose: () => void,
-    onAddToCart: (product: Product, quantity: number, size?: string, color?: string) => void,
-    formatCurrency: (amount: number) => string,
-    showToast: (message: string, type?: 'success' | 'error') => void,
-    allProducts: Product[],
-    config: StoreConfig;
-    onSelectProduct: (product: Product) => void;
-}> = ({ product, onClose, onAddToCart, formatCurrency, showToast, allProducts, config, onSelectProduct }) => {
-    const [quantity, setQuantity] = useState(1);
-    const [galleryImage, setGalleryImage] = useState<string | null>(null);
-    const [showSizeGuide, setShowSizeGuide] = useState(false);
-    const [selectedSize, setSelectedSize] = useState<string | undefined>(undefined);
-    const [selectedColor, setSelectedColor] = useState<string | undefined>(undefined);
-
-    const relatedProducts = useMemo(() => {
-        return allProducts
-            .filter(p => p.id !== product.id && p.category === product.category)
-            .slice(0, 4);
-    }, [allProducts, product]);
-
-    useEffect(() => {
-      setQuantity(1);
-      setGalleryImage(null);
-      setShowSizeGuide(false);
-      const sizes = product.variants?.sizes || {};
-      const availableSizes = Object.entries(sizes).filter(([,d]: [string, ProductVariantDetail]) => d.available).map(([s]) => s);
-      if (product.variants?.hasSizes && availableSizes.length > 0) setSelectedSize(availableSizes[0]);
-      else setSelectedSize(undefined);
-
-      const colors = product.variants?.colors || {};
-      const availableColors = Object.entries(colors).filter(([,d]: [string, ProductColorVariantDetail]) => d.available).map(([c]) => c);
-      if (product.variants?.hasColors && availableColors.length > 0) setSelectedColor(availableColors[0]);
-      else setSelectedColor(undefined);
-    }, [product]);
-
-    const displayImage = galleryImage || (selectedColor && product.variants?.colors?.[selectedColor]?.imageUrl
-        ? product.variants.colors[selectedColor]!.imageUrl
-        : product.imageUrl);
-
-    const hasDiscount = product.discountPercentage != null && product.discountPercentage > 0;
-    const discountedPrice = hasDiscount ? product.price * (1 - product.discountPercentage! / 100) : product.price;
-
-    const galleryImages = [...new Set([product.imageUrl, ...(product.additionalImages || [])].filter(Boolean))];
-    const increaseQuantity = () => setQuantity(q => Math.min(q + 1, product.stock ?? q + 1));
-    const isQuantityMax = product.stock !== undefined && quantity >= product.stock;
-    const isAddToCartDisabled = !product.available || (product.variants?.hasSizes && !selectedSize) || (product.variants?.hasColors && !selectedColor);
-
-    const handleShareProduct = async () => {
-        const shareUrl = `${window.location.origin}/product/${encodeURIComponent(product.id)}`;
-        const shareData = {
-            title: product.name,
-            text: `¡Mira este increíble producto de Bombon Store: ${product.name}!`,
-            url: shareUrl,
-        };
-
-        try {
-            if (navigator.share) {
-                await navigator.share(shareData);
-            } else {
-                throw new Error('Web Share API no es compatible.');
-            }
-        } catch (err) {
-            console.warn("Fallback: copiando al portapapeles.", err);
-            try {
-                await navigator.clipboard.writeText(shareUrl);
-                showToast('Enlace copiado al portapapeles');
-            } catch (copyErr) {
-                console.error('Error al copiar el enlace: ', copyErr);
-                showToast('No se pudo copiar el enlace.', 'error');
-            }
-        }
-    };
-
-    return (
-        <div className="fixed inset-0 bg-background z-[70] overflow-y-auto overscroll-contain" onClick={onClose}>
-            <div className="min-h-screen flex flex-col bg-background" onClick={e => e.stopPropagation()}>
-                <div className="flex flex-col md:flex-row">
-                    {/* Close Button - Floating */}
-                    <button
-                        onClick={onClose} aria-label="Cerrar producto"
-                        className="fixed top-4 right-4 z-[90] p-2 text-gray-500 bg-white/80 backdrop-blur-sm hover:text-on-surface hover:bg-white rounded-full shadow-md transition-all"
-                    >
-                        <CloseIcon className="w-6 h-6"/>
-                    </button>
-
-                    {/* Left Column: Image */}
-                    <div className="w-full md:w-[60%] bg-[#f5f5f5] md:h-screen md:sticky md:top-0 flex flex-col items-center justify-center p-4 md:p-12">
-                        <div className="w-full h-[60vh] md:h-[80vh] flex items-center justify-center overflow-hidden">
-                            <ProductImage src={displayImage} alt={product.name} eager className="max-w-full max-h-full object-contain transition-transform duration-500 hover:scale-105" />
-                        </div>
-                        {galleryImages.length > 1 && <div className="mt-3 flex max-w-full gap-2 overflow-x-auto p-1" aria-label="Fotografías del producto">
-                            {galleryImages.map((image, index) => <button type="button" key={image} onClick={() => setGalleryImage(image)} aria-label={`Ver fotografía ${index + 1}`} aria-pressed={displayImage === image} className={`h-16 w-14 flex-shrink-0 overflow-hidden rounded border-2 ${displayImage === image ? 'border-primary' : 'border-transparent'}`}><ProductImage src={image} alt={`${product.name}, fotografía ${index + 1}`} className="h-full w-full object-cover" /></button>)}
-                        </div>}
-                    </div>
-
-                    {/* Right Column: Content */}
-                    <div className="w-full md:w-[40%] p-6 md:p-12 flex flex-col">
-                        <div className="md:sticky md:top-12">
-                            <div className="flex justify-between items-start mb-4">
-                                <div>
-                                    <h1 className="text-3xl md:text-4xl font-bold font-serif mb-2 cyber-text">{product.name}</h1>
-                                    <p className="text-gray-500 text-sm uppercase tracking-widest">{product.category}</p>
-                                </div>
-                                <button
-                                    onClick={handleShareProduct}
-                                    className="p-2 text-gray-400 hover:text-primary transition-colors"
-                                    title="Compartir"
-                                >
-                                    <ShareIcon className="w-6 h-6"/>
-                                </button>
-                            </div>
-
-                            <div className="flex items-baseline gap-4 mb-6">
-                                <span className="text-3xl font-bold text-primary cyber-text">{formatCurrency(discountedPrice)}</span>
-                                {hasDiscount && (
-                                    <span className="text-xl text-gray-400 line-through">{formatCurrency(product.price)}</span>
-                                )}
-                                {hasDiscount && (
-                                    <span className="bg-red-100 text-red-600 text-xs font-bold px-2 py-1 rounded">
-                                        {product.discountPercentage}% OFF
-                                    </span>
-                                )}
-                            </div>
-
-                            {product.madeInColombia && (
-                                <div className="flex items-center gap-2 mb-6 text-sm font-medium text-gray-600">
-                                    <span className="w-6 h-4 bg-yellow-400 inline-block rounded-sm relative overflow-hidden">
-                                        <div className="absolute top-1/3 w-full h-1/3 bg-blue-600"></div>
-                                        <div className="absolute bottom-0 w-full h-1/3 bg-red-600"></div>
-                                    </span>
-                                    Hecho en Colombia
-                                </div>
-                            )}
-
-                            <div className="h-px bg-gray-100 w-full mb-8" />
-
-                            <div className="space-y-8">
-                                {/* Description */}
-                                <div>
-                                    <h3 className="text-sm font-bold uppercase tracking-wider mb-3">Descripción</h3>
-                                    <p className="text-gray-600 leading-relaxed whitespace-pre-line">{product.description || 'Pronto tendremos más detalles de esta prenda.'}</p>
-                                </div>
-
-                                {/* Variants: Sizes */}
-                                {product.variants?.hasSizes && (
-                                    <div>
-                                        <div className="flex justify-between items-center mb-3">
-                                            <h3 className="text-sm font-bold uppercase tracking-wider">Talla</h3>
-                                            {product.sizeGuideText?.trim() && <button type="button" className="text-xs text-primary underline" aria-expanded={showSizeGuide} onClick={() => setShowSizeGuide(value => !value)}>Guía de tallas</button>}
-                                        </div>
-                                        {showSizeGuide && <p className="mb-3 rounded-lg bg-gray-50 p-4 text-sm whitespace-pre-line">{product.sizeGuideText}</p>}
-                                        <div className="flex flex-wrap gap-3">
-                                            {Object.entries(product.variants?.sizes || {}).map(([size, details]: [string, ProductVariantDetail]) => (
-                                                <button
-                                                    key={size}
-                                                    onClick={() => setSelectedSize(size)}
-                                                    disabled={!details.available}
-                                                    className={`min-w-[3rem] h-12 flex items-center justify-center border-2 rounded-lg text-sm font-medium transition-all ${
-                                                        selectedSize === size
-                                                            ? 'border-primary bg-primary/5 text-primary'
-                                                            : 'border-gray-100 hover:border-gray-300'
-                                                    } ${!details.available ? 'opacity-30 cursor-not-allowed line-through' : ''}`}
-                                                >
-                                                    {size}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* Variants: Colors */}
-                                {product.variants?.hasColors && (
-                                    <div>
-                                        <h3 className="text-sm font-bold uppercase tracking-wider mb-3">Color</h3>
-                                        <div className="flex flex-wrap gap-3">
-                                            {Object.entries(product.variants?.colors || {}).map(([color, details]: [string, ProductColorVariantDetail]) => (
-                                                <button
-                                                    key={color}
-                                                    onClick={() => { setSelectedColor(color); setGalleryImage(null); }}
-                                                    disabled={!details.available}
-                                                    className={`group relative min-w-[4rem] h-16 flex flex-col items-center justify-center border-2 rounded-lg text-xs font-medium transition-all overflow-hidden ${
-                                                        selectedColor === color
-                                                            ? 'border-primary bg-primary/5 text-primary'
-                                                            : 'border-gray-100 hover:border-gray-300'
-                                                    } ${!details.available ? 'opacity-30 cursor-not-allowed' : ''}`}
-                                                >
-                                                    {details.imageUrl ? (
-                                                        <img src={details.imageUrl} alt={color} className="absolute inset-0 w-full h-full object-cover opacity-40 group-hover:opacity-60 transition-opacity" referrerPolicy="no-referrer" />
-                                                    ) : (
-                                                        <div className="w-6 h-6 rounded-full border border-gray-300 mb-1 shadow-inner" style={{ backgroundColor: getValidColor(color) }} />
-                                                    )}
-                                                    <span className="relative z-10">{color}</span>
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* Quantity */}
-                                <div>
-                                    <h3 className="text-sm font-bold uppercase tracking-wider mb-3">Cantidad</h3>
-                                    <div className="flex items-center w-32 border-2 border-gray-100 rounded-lg overflow-hidden">
-                                        <button
-                                            onClick={() => setQuantity(q => Math.max(1, q - 1))}
-                                            className="w-10 h-10 flex items-center justify-center hover:bg-gray-50 transition-colors"
-                                        >
-                                            <MinusIcon className="w-4 h-4"/>
-                                        </button>
-                                        <span className="flex-1 text-center font-bold">{quantity}</span>
-                                        <button
-                                            onClick={increaseQuantity} disabled={isQuantityMax} aria-label="Aumentar cantidad"
-                                            className="w-10 h-10 flex items-center justify-center hover:bg-gray-50 transition-colors"
-                                        >
-                                            <PlusIcon className="w-4 h-4"/>
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {/* Payment Methods */}
-                                <div className="pt-4 border-t border-gray-100">
-                                    <h3 className="text-sm font-bold uppercase tracking-wider mb-3">Medios de Pago</h3>
-                                    <div className="flex flex-col gap-3 opacity-80 hover:opacity-100 transition-all">
-                                        {config.paymentMethodsImageUrl && (
-                                            <img src={config.paymentMethodsImageUrl === 'https://i.ibb.co/QPDWf6s/medios-de-pago.png' ? '/medios-pago-bombon.png' : config.paymentMethodsImageUrl} alt="Medios de pago: Addi, Sistecrédito y tarjetas débito y crédito" className="w-full h-auto object-contain object-left" referrerPolicy="no-referrer" />
-                                        )}
-                                        <span className="text-[10px] text-gray-400 uppercase tracking-tighter font-medium">Nequi • Daviplata • Tarjetas • Addi • Sistecredito</span>
-                                    </div>
-                                </div>
-
-                                {/* Desktop Add to Cart Button */}
-                                <div className="hidden md:block pt-4">
-                                    <button
-                                        onClick={() => onAddToCart(product, quantity, selectedSize, selectedColor)}
-                                        disabled={isAddToCartDisabled}
-                                        className="w-full bg-primary text-white py-4 rounded-xl font-bold text-lg hover:bg-primary-dark transition-all transform active:scale-[0.98] disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed shadow-lg shadow-primary/20 cyber-gradient-bg"
-                                    >
-                                        {product.available ? 'Agregar al Carrito' : 'Agotado'}
-                                    </button>
-                                    <p className="text-center text-xs text-gray-400 mt-4">
-                                        {(config.freeShippingThreshold ?? 200000) > 0 ? `Envío gratis desde ${formatCurrency(config.freeShippingThreshold ?? 200000)}` : 'El costo de envío se calcula al hacer el pedido.'}
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Related Products Section */}
-                {relatedProducts.length > 0 && (
-                    <div className="p-6 md:p-12 bg-white border-t border-gray-100">
-                        <h2 className="text-2xl font-bold font-serif mb-8 text-center">También te puede gustar</h2>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                            {relatedProducts.map(p => (
-                                <button type="button" key={p.id} className="group cursor-pointer text-left" onClick={() => onSelectProduct(p)}>
-                                    <div className="aspect-[3/4] bg-gray-50 rounded-xl overflow-hidden mb-3 relative">
-                                        <ProductImage src={p.imageUrl} alt={p.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
-                                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
-                                    </div>
-                                    <h3 className="font-bold text-sm truncate">{p.name}</h3>
-                                    <p className="text-primary font-bold">{formatCurrency(salePrice(p))}</p>
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                )}
-
-                {/* Mobile Fixed Add to Cart Button */}
-                <div className="md:hidden sticky bottom-0 left-0 w-full p-4 bg-white/90 backdrop-blur-md border-t border-gray-100 z-[80] flex gap-3">
-                    <div className="flex items-center border border-gray-200 rounded-lg px-2">
-                        <button onClick={() => setQuantity(q => Math.max(1, q - 1))} className="p-2"><MinusIcon className="w-4 h-4"/></button>
-                        <span className="w-8 text-center font-bold">{quantity}</span>
-                        <button onClick={increaseQuantity} disabled={isQuantityMax} aria-label="Aumentar cantidad" className="p-2 disabled:opacity-40"><PlusIcon className="w-4 h-4"/></button>
-                    </div>
-                    <button
-                        onClick={() => onAddToCart(product, quantity, selectedSize, selectedColor)}
-                        disabled={isAddToCartDisabled}
-                        className="flex-1 bg-primary text-white py-4 rounded-xl font-bold shadow-lg shadow-primary/20 active:scale-[0.98] transition-all disabled:bg-gray-200 cyber-gradient-bg"
-                    >
-                        {product.available ? 'Agregar' : 'Agotado'} — {formatCurrency(discountedPrice * quantity)}
-                    </button>
-                </div>
             </div>
         </div>
     );

@@ -6,24 +6,9 @@ import { doc, collection, addDoc, updateDoc, deleteDoc } from 'firebase/firestor
 import { generateProductDescription } from '../services/productTools';
 import { uploadImageToStorage } from '../services/imageUploads';
 import AdminInput from './AdminInput';
+import BannerDestinationPicker from './BannerDestinationPicker';
+import { bannerDestination } from '../services/bannerDestinations';
 import { catalogCompany, DEFAULT_COMPANY_ID } from '../services/catalog';
-
-const AdminSelect: React.FC<{
-    label: string;
-    value: string;
-    onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void;
-    options: { label: string; value: string }[];
-    className?: string;
-}> = ({ label, value, onChange, options, className = "" }) => (
-    <div className={className}>
-        <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
-        <select value={value} onChange={onChange} className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary sm:text-sm disabled:bg-gray-100">
-            {options.map((opt, idx) => (
-                <option key={idx} value={opt.value}>{opt.label}</option>
-            ))}
-        </select>
-    </div>
-);
 
 const ImageUpload: React.FC<{
     currentImage: string;
@@ -211,6 +196,7 @@ const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                             banners={props.store.banners}
                             menBanners={props.store.menBanners}
                             categories={props.store.categories}
+                            products={props.store.products}
                             onSaveBanners={onSaveBanners}
                             onSaveMenBanners={onSaveMenBanners}
                         /> : null;
@@ -659,16 +645,20 @@ const AdminBannersTab: React.FC<{
     banners: Banner[], 
     menBanners: Banner[],
     categories: Category[],
+    products: Product[],
     onSaveBanners: (b: Banner[]) => Promise<void> | void,
     onSaveMenBanners: (b: Banner[]) => Promise<void> | void
-}> = ({ banners, menBanners, categories, onSaveBanners, onSaveMenBanners }) => {
+}> = ({ banners, menBanners, categories, products, onSaveBanners, onSaveMenBanners }) => {
     const [uploadCount, setUploadCount] = useState(0);
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState('');
     const save = async (men: boolean) => {
         setSaving(true); setSaveError('');
-        try { await (men ? onSaveMenBanners(localMenBanners) : onSaveBanners(localBanners)); }
-        catch { setSaveError('No se guardaron los banners. Intenta nuevamente.'); }
+        try {
+            const selected = men ? localMenBanners : localBanners;
+            if (selected.some(banner => bannerDestination(banner.link).kind === 'none')) throw new Error('Selecciona el destino de cada banner antes de guardar.');
+            await (men ? onSaveMenBanners(localMenBanners) : onSaveBanners(localBanners)); }
+        catch (error) { setSaveError(error instanceof Error ? error.message : 'No se guardaron los banners. Intenta nuevamente.'); }
         finally { setSaving(false); }
     };
     const [localBanners, setLocalBanners] = useState<Banner[]>(banners || []);
@@ -690,7 +680,7 @@ const AdminBannersTab: React.FC<{
         }
     };
     const addBanner = (isMen: boolean) => {
-        const newBanner: Banner = { id: Date.now(), imageUrl: '', title: '', subtitle: '', link: '#' };
+        const newBanner: Banner = { id: Date.now(), imageUrl: '', title: '', subtitle: '', link: '#productos' };
         if (isMen) {
             setLocalMenBanners([...localMenBanners, newBanner]);
         } else {
@@ -704,12 +694,6 @@ const AdminBannersTab: React.FC<{
             setLocalBanners(localBanners.filter(b => b.id !== id));
         }
     };
-
-    const linkOptions = [
-        { label: 'Elegir destino...', value: '' },
-        { label: 'Todos los productos', value: '#productos' },
-        ...categories.map(cat => ({ label: `Categoría: ${cat}`, value: `category:${cat}` }))
-    ];
 
     return (
          <div className="p-6 space-y-12">
@@ -732,16 +716,7 @@ const AdminBannersTab: React.FC<{
                             <div className="md:col-span-2 space-y-4">
                                 <AdminInput label="Título" value={banner.title} onChange={e => updateBanner(banner.id, 'title', e.target.value, false)} />
                                 <AdminInput label="Subtítulo" value={banner.subtitle} onChange={e => updateBanner(banner.id, 'subtitle', e.target.value, false)} />
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    <AdminInput label="Enlace Manual" value={banner.link} onChange={e => updateBanner(banner.id, 'link', e.target.value, false)} placeholder="Ej: #productos"/>
-                                    <AdminSelect 
-                                        label="Conectar a Categoría" 
-                                        value={banner.link.startsWith('category:') ? banner.link : ''} 
-                                        onChange={e => e.target.value && updateBanner(banner.id, 'link', e.target.value, false)}
-                                        options={linkOptions}
-                                    />
-                                </div>
-                                <p className="text-xs text-gray-400">Actual: {banner.link}</p>
+                                <BannerDestinationPicker link={banner.link} categories={categories} products={products} onChange={link => updateBanner(banner.id, 'link', link, false)} />
                             </div>
                             <button onClick={() => removeBanner(banner.id, false)} className="absolute top-2 right-2 text-red-500 hover:text-red-700"><TrashIcon className="w-5 h-5"/></button>
                         </div>
@@ -765,16 +740,7 @@ const AdminBannersTab: React.FC<{
                             <div className="md:col-span-2 space-y-4">
                                 <AdminInput label="Título" value={banner.title} onChange={e => updateBanner(banner.id, 'title', e.target.value, true)} />
                                 <AdminInput label="Subtítulo" value={banner.subtitle} onChange={e => updateBanner(banner.id, 'subtitle', e.target.value, true)} />
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    <AdminInput label="Enlace Manual" value={banner.link} onChange={e => updateBanner(banner.id, 'link', e.target.value, true)} placeholder="Ej: #productos"/>
-                                    <AdminSelect 
-                                        label="Conectar a Categoría" 
-                                        value={banner.link.startsWith('category:') ? banner.link : ''} 
-                                        onChange={e => e.target.value && updateBanner(banner.id, 'link', e.target.value, true)}
-                                        options={linkOptions}
-                                    />
-                                </div>
-                                <p className="text-xs text-gray-600">Actual: {banner.link}</p>
+                                <BannerDestinationPicker link={banner.link} categories={categories} products={products} onChange={link => updateBanner(banner.id, 'link', link, true)} />
                             </div>
                             <button onClick={() => removeBanner(banner.id, true)} className="absolute top-2 right-2 text-red-500 hover:text-red-700"><TrashIcon className="w-5 h-5"/></button>
                         </div>

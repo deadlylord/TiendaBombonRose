@@ -1,12 +1,15 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type MouseEvent } from 'react';
 import type { Banner, Category } from '../types';
 import { ChevronLeftIcon, ChevronRightIcon } from './Icons';
+import { bannerDestination } from '../services/bannerDestinations';
 import { loadBannerImage } from '../services/bannerImages';
 
-export default function BannerCarousel({ banners, loading = false, onNavigateToCategory, isMenTheme }: {
+export default function BannerCarousel({ banners, loading = false, onNavigateToCategory, onNavigateToProduct, onViewCatalog, isMenTheme }: {
   banners: Banner[];
   loading?: boolean;
   onNavigateToCategory: (category: Category) => void;
+  onNavigateToProduct: (id: string) => void;
+  onViewCatalog: () => void;
   isMenTheme?: boolean;
 }) {
   const slides = useMemo(() => banners.filter(banner => banner.imageUrl?.trim()), [banners]);
@@ -19,6 +22,7 @@ export default function BannerCarousel({ banners, loading = false, onNavigateToC
   const displayed = shown?.signature === signature ? shown.banner : null;
   const requested = slides[index % slides.length];
   const caption = displayed || requested;
+  const destination = bannerDestination(caption?.link || '');
 
   useEffect(() => { setIndex(0); }, [signature]);
   useEffect(() => {
@@ -40,9 +44,17 @@ export default function BannerCarousel({ banners, loading = false, onNavigateToC
     return () => window.clearTimeout(timer);
   }, [slides.length, pending, error, displayed, index]);
 
+  const handleDestinationClick = (event: MouseEvent<HTMLAnchorElement>) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+        if (destination.kind === 'category') { event.preventDefault(); onNavigateToCategory(destination.category); }
+        else if (destination.kind === 'product') { event.preventDefault(); onNavigateToProduct(destination.productId); }
+        else if (destination.kind === 'catalog') { event.preventDefault(); onViewCatalog(); }
+
+  };
+
   return <section aria-label="Colecciones destacadas" aria-busy={loading || (pending && !!requested)}>
     <div className="relative mx-auto aspect-[2/3] max-h-[80vh] w-full overflow-hidden bg-[#fff5f8] md:aspect-[8/5]">
-      {displayed && <img src={displayed.imageUrl} alt={displayed.title || 'Colección Bombón'} decoding="async" fetchPriority="high" referrerPolicy="no-referrer" className="absolute inset-0 h-full w-full object-contain" />}
+      {displayed && (destination.kind !== 'none' ? <a href={destination.href} onClick={handleDestinationClick} aria-label={destination.kind === 'product' ? 'Ver prenda del banner' : 'Ver colección del banner'} className="absolute inset-0"><img src={displayed.imageUrl} alt={displayed.title || 'Colección Bombón'} decoding="async" fetchPriority="high" referrerPolicy="no-referrer" className="h-full w-full object-contain" /></a> : <img src={displayed.imageUrl} alt={displayed.title || 'Colección Bombón'} decoding="async" fetchPriority="high" referrerPolicy="no-referrer" className="absolute inset-0 h-full w-full object-contain" />)}
       {!displayed && <div role="status" className="absolute inset-0 flex items-center justify-center p-8 text-center text-sm text-gray-500">
         {loading || (requested && pending) ? 'Cargando colección…' : error ? 'No se pudo cargar la imagen.' : 'Pronto encontrarás nuevas colecciones aquí.'}
       </div>}
@@ -56,9 +68,7 @@ export default function BannerCarousel({ banners, loading = false, onNavigateToC
       {caption && <>
       {caption.title && <h2 className="font-serif text-2xl text-on-surface sm:text-3xl">{caption.title}</h2>}
       {caption.subtitle && <p className="mt-2 text-sm text-gray-600 sm:text-base">{caption.subtitle}</p>}
-      <a href={caption.link.startsWith('category:') ? '#productos' : caption.link} onClick={event => {
-        if (caption.link.startsWith('category:')) { event.preventDefault(); onNavigateToCategory(caption.link.slice('category:'.length)); }
-      }} className={`mt-4 inline-block rounded-full px-7 py-3 font-semibold text-white ${isMenTheme ? 'cyber-gradient-bg' : 'bg-primary hover:bg-primary-dark'}`}>Ver colección</a>
+      {destination.kind !== 'none' && <a href={destination.href} onClick={handleDestinationClick} className={`mt-4 inline-block rounded-full px-7 py-3 font-semibold text-white ${isMenTheme ? 'cyber-gradient-bg' : 'bg-primary hover:bg-primary-dark'}`}>{destination.kind === 'product' ? 'Ver prenda' : 'Ver colección'}</a>}
       </>}
     </div>
   </section>;
