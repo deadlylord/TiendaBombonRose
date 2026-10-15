@@ -4,12 +4,13 @@ import { ChevronLeftIcon, ChevronRightIcon } from './Icons';
 import { bannerDestination } from '../services/bannerDestinations';
 import { loadBannerImage } from '../services/bannerImages';
 
-export default function BannerCarousel({ banners, loading = false, onNavigateToCategory, onNavigateToProduct, onViewCatalog }: {
+export default function BannerCarousel({ banners, loading = false, onNavigateToCategory, onNavigateToProduct, onViewCatalog, onInitialReady }: {
   banners: Banner[];
   loading?: boolean;
   onNavigateToCategory: (category: Category) => void;
   onNavigateToProduct: (id: string) => void;
   onViewCatalog: () => void;
+  onInitialReady?: () => void;
   isMenTheme?: boolean;
 }) {
   const slides = useMemo(() => banners.filter(banner => banner.imageUrl?.trim()), [banners]);
@@ -23,6 +24,14 @@ export default function BannerCarousel({ banners, loading = false, onNavigateToC
   const requested = slides[index % slides.length];
   const caption = displayed || requested;
   const destination = bannerDestination(caption?.link || '');
+
+  useEffect(() => {
+    if (loading) return;
+    if (slides.length === 0 || displayed || error) { onInitialReady?.(); return; }
+    // A slow external image must not keep the rest of the shop covered forever.
+    const timer = window.setTimeout(() => onInitialReady?.(), 6000);
+    return () => window.clearTimeout(timer);
+  }, [loading, slides.length, displayed, error, onInitialReady]);
 
   useEffect(() => { setIndex(0); }, [signature]);
   useEffect(() => {
@@ -53,10 +62,10 @@ export default function BannerCarousel({ banners, loading = false, onNavigateToC
   };
 
   return <section aria-label="Colecciones destacadas" aria-busy={loading || (pending && !!requested)}>
-    <div className="relative mx-auto aspect-[2/3] max-h-[80vh] w-full overflow-hidden bg-[#fff5f8] md:aspect-[8/5]">
+    <div className={`relative mx-auto aspect-[2/3] max-h-[80vh] w-full overflow-hidden md:aspect-[8/5] ${displayed || error ? 'bg-[#fff5f8]' : 'bg-white'}`}>
       {displayed && (destination.kind !== 'none' ? <a href={destination.href} onClick={handleDestinationClick} aria-label={destination.kind === 'product' ? 'Ver prenda del banner' : 'Ver colección del banner'} className="absolute inset-0"><img src={displayed.imageUrl} alt={displayed.title || 'Colección Bombón'} decoding="async" fetchPriority="high" referrerPolicy="no-referrer" className="h-full w-full object-contain" /></a> : <img src={displayed.imageUrl} alt={displayed.title || 'Colección Bombón'} decoding="async" fetchPriority="high" referrerPolicy="no-referrer" className="absolute inset-0 h-full w-full object-contain" />)}
-      {!displayed && <div role="status" className="absolute inset-0 flex items-center justify-center p-8 text-center text-sm text-gray-500">
-        {loading || (requested && pending) ? 'Cargando colección…' : error ? 'No se pudo cargar la imagen.' : 'Pronto encontrarás nuevas colecciones aquí.'}
+      {!displayed && <div role="status" aria-label="Cargando imagen principal" className="absolute inset-0 flex items-center justify-center p-8 text-center text-sm text-gray-500">
+        {loading || (requested && pending) ? null : error ? 'No se pudo cargar la imagen.' : 'Pronto encontrarás nuevas colecciones aquí.'}
       </div>}
       {error && <div role="alert" className="absolute inset-x-12 bottom-4 rounded-xl bg-white/95 p-3 text-center text-xs text-gray-600">La imagen no está disponible. <button type="button" onClick={() => setRetry(value => value + 1)} className="font-semibold text-pink-700 underline">Reintentar</button></div>}
       {displayed && caption && destination.kind !== 'none' && <a href={destination.href} onClick={handleDestinationClick} className="absolute left-1/2 top-1/2 max-w-[calc(100%-112px)] -translate-x-1/2 -translate-y-1/2 break-words rounded-full border border-[#E91E8C]/40 bg-white/55 px-7 py-3 text-center text-sm font-semibold text-[#E91E8C] backdrop-blur-[3px] transition-colors hover:bg-white/75 sm:px-9 sm:py-4 sm:text-base">{caption.buttonText?.trim() || (destination.kind === 'product' ? 'Ver prenda' : 'Ver colección')}</a>}

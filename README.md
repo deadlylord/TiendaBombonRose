@@ -107,3 +107,10 @@ Verificación: pruebas del catálogo/navegación, decodificación de banners y r
 ## Controles Bombón (0.4.10)
 
 El banner muestra únicamente la imagen y un botón central translúcido, con borde y texto rosados. El título y subtítulo ya no aparecen sobre ni debajo de la foto. El texto central se edita en Admin → Banners → Texto del botón central; si queda vacío se usa Ver colección o Ver prenda según el destino. Se conservan los destinos existentes y el clic sobre la imagen. Las flechas son contornos rosados sin disco blanco y el botón + de las tarjetas usa fondo fucsia con el signo blanco para que se distinga.
+
+
+## Inicio sin reemplazos de la animación (0.4.11)
+
+El círculo rosa original permanece en un nodo HTML independiente de la raíz de React. Ya no se recrea al descargar App ni al recibir la configuración. La tienda se monta detrás y el cargador se retira una sola vez después de confirmar el primer banner (o su error/ausencia) y esperar dos cuadros de renderizado. Una imagen externa lenta no bloquea el acceso más de seis segundos desde que llega la lista de banners. Las rutas directas también retiran el cargador; las fichas esperan al catálogo.
+
+La tipografía de la carga es Arial estable, sin cambio al descargar Poppins, y el contenedor/círculo no tienen borde, fondo rectangular, sombra ni contorno. El círculo, el mensaje y el botón de reintento conservan su diseño. Se verifican la coincidencia de HTML/React y el retiro único diferido del nodo inicial; no se ha verificado visualmente en el teléfono.

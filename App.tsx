@@ -18,7 +18,7 @@ import {
   PencilIcon, HeartIcon, ShoppingBagIcon, ArrowLeftIcon
 } from './components/Icons';
 
-import StoreLoader from './components/StoreLoader';
+import { revealStorefront } from './services/startupScreen';
 import BannerCarousel from './components/BannerCarousel';
 import ProductDetails from './components/ProductDetails';
 import StoreLogo from './components/StoreLogo';
@@ -209,7 +209,6 @@ const App: React.FC = () => {
     // Admin State
     const [editMode, setEditMode] = useState(false);
 
-    const isAppLoading = isConfigLoading;
     const previousCompany = useRef(companyId);
     useEffect(() => {
         if (previousCompany.current !== companyId) {
@@ -815,7 +814,11 @@ const App: React.FC = () => {
         }
     };
 
-    if (isAppLoading) return <StoreLoader />;
+    useEffect(() => {
+        if (!isConfigLoading && currentPath !== '/' && (!currentPath.startsWith('/product/') || !isCatalogLoading)) revealStorefront();
+    }, [isConfigLoading, currentPath, isCatalogLoading]);
+
+    if (isConfigLoading) return null;
 
     // --- UI COMPONENTS ---
     const ToastContainer = () => (
@@ -1000,6 +1003,7 @@ const App: React.FC = () => {
                     transition={{ duration: 0.3 }}
                   >
                     <BannerCarousel
+                        onInitialReady={revealStorefront}
                         banners={areBannersLoading ? [] : isMenTheme ? menBanners : banners}
                         loading={areBannersLoading}
                         onNavigateToCategory={category => handleCatalogFilters({ term: '', category, size: '', color: '', sort: 'recent' })}
