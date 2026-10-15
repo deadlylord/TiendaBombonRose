@@ -1214,7 +1214,7 @@ const ProductCard: React.FC<{
                 <div className="absolute bottom-2 right-2">
                     <button
                       onClick={(e) => { e.stopPropagation(); onQuickAdd(product); }}
-                      className="bg-surface/90 backdrop-blur-sm text-primary rounded-full p-2 shadow-md hover:bg-surface transition-all scale-100 hover:scale-110 active:scale-95 disabled:opacity-50 cyber-gradient-bg"
+                      className="bg-[#E91E8C] text-white rounded-full p-2 shadow-md ring-2 ring-white/80 hover:bg-[#c91875] transition-transform scale-100 hover:scale-110 active:scale-95 disabled:opacity-50"
                       aria-label="Agregar al carrito"
                       disabled={!product.available}
                     >

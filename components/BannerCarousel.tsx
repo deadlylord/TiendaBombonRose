@@ -4,7 +4,7 @@ import { ChevronLeftIcon, ChevronRightIcon } from './Icons';
 import { bannerDestination } from '../services/bannerDestinations';
 import { loadBannerImage } from '../services/bannerImages';
 
-export default function BannerCarousel({ banners, loading = false, onNavigateToCategory, onNavigateToProduct, onViewCatalog, isMenTheme }: {
+export default function BannerCarousel({ banners, loading = false, onNavigateToCategory, onNavigateToProduct, onViewCatalog }: {
   banners: Banner[];
   loading?: boolean;
   onNavigateToCategory: (category: Category) => void;
@@ -59,16 +59,10 @@ export default function BannerCarousel({ banners, loading = false, onNavigateToC
         {loading || (requested && pending) ? 'Cargando colección…' : error ? 'No se pudo cargar la imagen.' : 'Pronto encontrarás nuevas colecciones aquí.'}
       </div>}
       {error && <div role="alert" className="absolute inset-x-12 bottom-4 rounded-xl bg-white/95 p-3 text-center text-xs text-gray-600">La imagen no está disponible. <button type="button" onClick={() => setRetry(value => value + 1)} className="font-semibold text-pink-700 underline">Reintentar</button></div>}
+      {displayed && caption && destination.kind !== 'none' && <a href={destination.href} onClick={handleDestinationClick} className="absolute left-1/2 top-1/2 max-w-[calc(100%-112px)] -translate-x-1/2 -translate-y-1/2 break-words rounded-full border border-[#E91E8C]/40 bg-white/55 px-7 py-3 text-center text-sm font-semibold text-[#E91E8C] backdrop-blur-[3px] transition-colors hover:bg-white/75 sm:px-9 sm:py-4 sm:text-base">{caption.buttonText?.trim() || (destination.kind === 'product' ? 'Ver prenda' : 'Ver colección')}</a>}
       {slides.length > 1 && <>
-        <button type="button" aria-label="Banner anterior" onClick={() => setIndex(value => (value - 1 + slides.length) % slides.length)} className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-2 shadow-sm"><ChevronLeftIcon className="h-6 w-6" /></button>
-        <button type="button" aria-label="Banner siguiente" onClick={() => setIndex(value => (value + 1) % slides.length)} className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-2 shadow-sm"><ChevronRightIcon className="h-6 w-6" /></button>
-      </>}
-    </div>
-    <div className="min-h-[160px] bg-white px-5 py-5 text-center">
-      {caption && <>
-      {caption.title && <h2 className="font-serif text-2xl text-on-surface sm:text-3xl">{caption.title}</h2>}
-      {caption.subtitle && <p className="mt-2 text-sm text-gray-600 sm:text-base">{caption.subtitle}</p>}
-      {destination.kind !== 'none' && <a href={destination.href} onClick={handleDestinationClick} className={`mt-4 inline-block rounded-full px-7 py-3 font-semibold text-white ${isMenTheme ? 'cyber-gradient-bg' : 'bg-primary hover:bg-primary-dark'}`}>{destination.kind === 'product' ? 'Ver prenda' : 'Ver colección'}</a>}
+        <button type="button" aria-label="Banner anterior" onClick={() => setIndex(value => (value - 1 + slides.length) % slides.length)} className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-transparent p-2 text-[#E91E8C] transition-colors hover:bg-pink-50/30"><ChevronLeftIcon className="h-6 w-6" /></button>
+        <button type="button" aria-label="Banner siguiente" onClick={() => setIndex(value => (value + 1) % slides.length)} className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-transparent p-2 text-[#E91E8C] transition-colors hover:bg-pink-50/30"><ChevronRightIcon className="h-6 w-6" /></button>
       </>}
     </div>
   </section>;

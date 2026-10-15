@@ -714,8 +714,8 @@ const AdminBannersTab: React.FC<{
                         <div key={banner.id} className="bg-white rounded-lg shadow p-4 grid grid-cols-1 md:grid-cols-3 gap-4 relative">
                             <ImageUpload onUploadingChange={active => setUploadCount(count => count + (active ? 1 : -1))} optimizeBanner label="Imagen del Banner" currentImage={banner.imageUrl} onImageSelect={url => updateBanner(banner.id, 'imageUrl', url, false)} />
                             <div className="md:col-span-2 space-y-4">
-                                <AdminInput label="Título" value={banner.title} onChange={e => updateBanner(banner.id, 'title', e.target.value, false)} />
-                                <AdminInput label="Subtítulo" value={banner.subtitle} onChange={e => updateBanner(banner.id, 'subtitle', e.target.value, false)} />
+                                <AdminInput label="Nombre del banner (solo administración)" value={banner.title} onChange={e => updateBanner(banner.id, 'title', e.target.value, false)} />
+                                <AdminInput label="Texto del botón central" value={banner.buttonText || ''} maxLength={60} onChange={e => updateBanner(banner.id, 'buttonText', e.target.value, false)} placeholder="Ver colección" />
                                 <BannerDestinationPicker link={banner.link} categories={categories} products={products} onChange={link => updateBanner(banner.id, 'link', link, false)} />
                             </div>
                             <button onClick={() => removeBanner(banner.id, false)} className="absolute top-2 right-2 text-red-500 hover:text-red-700"><TrashIcon className="w-5 h-5"/></button>
@@ -738,8 +738,8 @@ const AdminBannersTab: React.FC<{
                         <div key={banner.id} className="bg-black text-white rounded-lg shadow p-4 grid grid-cols-1 md:grid-cols-3 gap-4 relative border border-gray-800">
                             <ImageUpload onUploadingChange={active => setUploadCount(count => count + (active ? 1 : -1))} optimizeBanner label="Imagen del Banner" currentImage={banner.imageUrl} onImageSelect={url => updateBanner(banner.id, 'imageUrl', url, true)} />
                             <div className="md:col-span-2 space-y-4">
-                                <AdminInput label="Título" value={banner.title} onChange={e => updateBanner(banner.id, 'title', e.target.value, true)} />
-                                <AdminInput label="Subtítulo" value={banner.subtitle} onChange={e => updateBanner(banner.id, 'subtitle', e.target.value, true)} />
+                                <AdminInput label="Nombre del banner (solo administración)" value={banner.title} onChange={e => updateBanner(banner.id, 'title', e.target.value, true)} />
+                                <AdminInput label="Texto del botón central" value={banner.buttonText || ''} maxLength={60} onChange={e => updateBanner(banner.id, 'buttonText', e.target.value, true)} placeholder="Ver colección" />
                                 <BannerDestinationPicker link={banner.link} categories={categories} products={products} onChange={link => updateBanner(banner.id, 'link', link, true)} />
                             </div>
                             <button onClick={() => removeBanner(banner.id, true)} className="absolute top-2 right-2 text-red-500 hover:text-red-700"><TrashIcon className="w-5 h-5"/></button>

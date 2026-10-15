@@ -102,3 +102,8 @@ La ficha separa fotografías e información en escritorio y usa una vista compac
 En Admin → Banners, «Al tocar este banner, abrir» ofrece Todo el catálogo, Una categoría, Una prenda o Un enlace web. La opción de prenda permite buscar por nombre y previsualizar el producto; el destino usa su ID estable. La imagen y el botón del banner ejecutan el mismo destino sin recargar la tienda para categorías o prendas. Los enlaces históricos de categorías siguen funcionando y los destinos incompletos no se guardan.
 
 Verificación: pruebas del catálogo/navegación, decodificación de banners y resolución de destinos (incluidos IDs codificados y categorías con caracteres especiales), TypeScript y compilación. Revisión visual en navegador y publicación de Netlify pendientes.
+
+
+## Controles Bombón (0.4.10)
+
+El banner muestra únicamente la imagen y un botón central translúcido, con borde y texto rosados. El título y subtítulo ya no aparecen sobre ni debajo de la foto. El texto central se edita en Admin → Banners → Texto del botón central; si queda vacío se usa Ver colección o Ver prenda según el destino. Se conservan los destinos existentes y el clic sobre la imagen. Las flechas son contornos rosados sin disco blanco y el botón + de las tarjetas usa fondo fucsia con el signo blanco para que se distinga.

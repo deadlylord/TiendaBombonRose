@@ -39,6 +39,7 @@ export interface Product {
 export type Category = string;
 
 export interface Banner {
+  buttonText?: string;
   id: number;
   imageUrl: string;
   title: string;
