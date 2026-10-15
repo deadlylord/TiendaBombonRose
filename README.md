@@ -51,3 +51,7 @@ El panel administrativo se descarga únicamente al abrirlo, y Tailwind se compil
 Las categorías femeninas y generales aparecen antes que las masculinas, conservando orden alfabético dentro de cada grupo. La clasificación usa el nombre de la categoría: una etiqueta explícita de mujer/dama tiene prioridad, y hombre/caballero/Street o camisas/camisetas se agrupan después. Se aplica el mismo orden al menú y a los filtros, sin lecturas adicionales.
 
 Abrir una ficha conserva la búsqueda o categoría debajo, incluidos filtros y productos ya mostrados. Cerrar la ficha, agregar al carrito desde ella o usar el gesto de atrás vuelve a la entrada anterior del historial y recupera su posición vertical. Los productos relacionados retroceden uno por uno. Una ficha abierta directamente desde un enlace vuelve al catálogo al cerrarla. El cierre ya no agrega visitas artificiales al inicio.
+
+## Carga inicial (0.4.2)
+
+El HTML incluye una pantalla de carga con estilos y animaciones críticos, visibles antes de descargar JavaScript. React usa la misma pantalla mientras descarga la aplicación y consulta el catálogo. Los estilos completos se cargan con el módulo de la aplicación y las fuentes externas no bloquean la pantalla inicial. La animación respeta la preferencia de movimiento reducido; no se añaden consultas ni una espera mínima. Si falla la descarga del módulo de la tienda, se muestra un aviso con un botón para volver a intentar.
