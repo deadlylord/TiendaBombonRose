@@ -20,6 +20,7 @@ import {
 
 import StoreLoader from './components/StoreLoader';
 import StoreLogo from './components/StoreLogo';
+import CategoryNav from './components/CategoryNav';
 import CatalogControls from './components/CatalogControls';
 import ProductImage from './components/ProductImage';
 import { searchCatalog, availableVariantOptions, CatalogFilters, CatalogSort, salePrice } from './services/catalogSearch';
@@ -39,7 +40,7 @@ const initialConfig: StoreConfig = {
     secondLogoUrl: 'https://i.ibb.co/9GZ9m3z/street-legends-logo.png',
     contact: { name: 'Bombon Store', phone: '573001234567', schedule: 'Lunes a Sábado, 9am - 7pm' },
     social: { instagram: 'https://instagram.com/bombonrosecol', tiktok: 'https://tiktok.com/@bombonrosecol', whatsapp: '573001234567' },
-    paymentMethodsImageUrl: 'https://i.ibb.co/QPDWf6s/medios-de-pago.png',
+    paymentMethodsImageUrl: '/medios-pago-bombon.png',
     announcements: [
         '✨ ¡Envío GRATIS por compras superiores a $200.000! 🇨🇴',
         '⚡ Nueva Colección Street Legends disponible ya'
@@ -993,15 +994,11 @@ const App: React.FC = () => {
             <div className={`transition-all ${hasAnnouncements ? 'h-32 sm:h-36' : 'h-24 sm:h-28'}`} />
             {catalogError && <div role="alert" className="mx-auto max-w-3xl my-6 p-4 bg-rose-50 text-rose-900 rounded-lg text-center">{catalogError}</div>}
 
-            <CategoryNav
-              categories={categories}
-              selectedCategory={selectedCategory}
-              onSelectCategory={handleCategoryButtonClick}
-              isMenTheme={isMenTheme}
-              hasAnnouncements={hasAnnouncements}
-            />
-
-            <main className="pt-12">
+            <main className="pt-4 sm:pt-6">
+              {(isSearching || selectedCategory !== 'All') && <CategoryNav
+                categories={categories} products={products} selectedCategory={selectedCategory}
+                onSelectCategory={handleCategoryButtonClick}
+              />}
               <AnimatePresence mode="wait">
                 {isSearching ? (
                   <motion.section
@@ -1077,6 +1074,11 @@ const App: React.FC = () => {
                         banners={isMenTheme ? menBanners : banners}
                         onNavigateToCategory={(cat) => handleCategoryButtonClick(cat as Category)}
                         isMenTheme={isMenTheme}
+                    />
+
+                    <CategoryNav
+                        categories={categories} products={products} selectedCategory={selectedCategory}
+                        onSelectCategory={handleCategoryButtonClick}
                     />
 
                     <ProductCarousel title="Recién llegados ✨🆕" products={newArrivals} />
@@ -1573,38 +1575,6 @@ const Header: React.FC<{
                 </nav>
             </div>
         </>
-    );
-};
-
-const CategoryNav: React.FC<{
-    categories: Category[];
-    selectedCategory: string;
-    onSelectCategory: (category: Category | 'All') => void;
-    isMenTheme?: boolean;
-    hasAnnouncements?: boolean;
-}> = ({ categories, selectedCategory, onSelectCategory, isMenTheme, hasAnnouncements }) => {
-    return (
-        <nav className={`bg-surface border-b border-gray-200 sticky ${hasAnnouncements ? 'top-32 sm:top-36' : 'top-24 sm:top-28'} z-40 transition-all`}>
-            <div className="max-w-7xl 2xl:max-w-screen-2xl mx-auto overflow-x-auto scrollbar-hide px-4 sm:px-6 lg:px-8">
-                <div className="flex items-center space-x-2 py-3 min-w-full w-max justify-start md:justify-center">
-                    <button
-                        onClick={() => onSelectCategory('All')}
-                        className={`px-4 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap transition-colors duration-200 ${selectedCategory === 'All' ? (isMenTheme ? 'cyber-gradient-bg text-white' : 'bg-primary text-white') : 'bg-surface border border-gray-200 text-on-surface hover:bg-primary/20'}`}
-                    >
-                        Todas
-                    </button>
-                    {(categories || []).map(cat => (
-                        <button
-                            key={cat}
-                            onClick={() => onSelectCategory(cat)}
-                            className={`px-4 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap transition-colors duration-200 ${selectedCategory === cat ? (isMenTheme ? 'cyber-gradient-bg text-white' : 'bg-primary text-white') : 'bg-surface border border-gray-200 text-on-surface hover:bg-primary/20'}`}
-                        >
-                            {cat}
-                        </button>
-                    ))}
-                </div>
-            </div>
-        </nav>
     );
 };
 
@@ -2133,7 +2103,7 @@ const ProductDetailModal: React.FC<{
                                     <h3 className="text-sm font-bold uppercase tracking-wider mb-3">Medios de Pago</h3>
                                     <div className="flex flex-col gap-3 opacity-80 hover:opacity-100 transition-all">
                                         {config.paymentMethodsImageUrl && (
-                                            <img src={config.paymentMethodsImageUrl} alt="Medios de Pago" className="w-full md:w-auto h-auto md:h-20 object-contain object-left" referrerPolicy="no-referrer" />
+                                            <img src={config.paymentMethodsImageUrl === 'https://i.ibb.co/QPDWf6s/medios-de-pago.png' ? '/medios-pago-bombon.png' : config.paymentMethodsImageUrl} alt="Medios de pago: Addi, Sistecrédito y tarjetas débito y crédito" className="w-full h-auto object-contain object-left" referrerPolicy="no-referrer" />
                                         )}
                                         <span className="text-[10px] text-gray-400 uppercase tracking-tighter font-medium">Nequi • Daviplata • Tarjetas • Addi • Sistecredito</span>
                                     </div>

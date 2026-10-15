@@ -5,6 +5,9 @@
 :root { --primary-rgb: 233 30 140; --primary: #e91e8c; }
 html { scroll-padding-top: 12rem; }
 body { overflow-x: hidden; }
+.category-photo-track { scroll-snap-type: x proximity; scrollbar-width: thin; scrollbar-color: #f48fb1 #fff5f8; }
+.category-photo-track::-webkit-scrollbar { height: 4px; }
+.category-photo-track::-webkit-scrollbar-thumb { background: #f48fb1; border-radius: 999px; }
 button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
 :focus-visible { outline: 2px solid #e91e8c; outline-offset: 3px; }
 @media (prefers-reduced-motion: reduce) {

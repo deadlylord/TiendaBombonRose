@@ -63,3 +63,10 @@ Se restaura el diseño anterior: fondo blanco, círculo rosa de 40 px y «Descub
 ## Tamaño de logos (0.4.4)
 
 Los logos de Bombón y Street Legends comparten una altura de 64 px en celular y 72 px en pantallas mayores, con sus proporciones originales. El componente `StoreLogo` encuadra las dos imágenes actualmente configuradas para excluir sus márgenes vacíos, sin modificar los archivos originales. Otras imágenes conservan el ajuste estándar. El menú lateral usa el mismo encuadre. La cabecera, su espacio reservado y la posición fija de categorías se ajustan juntos para evitar superposiciones.
+
+
+## Selector visual y pagos (0.4.5)
+
+El selector aparece debajo del banner del inicio y al comienzo de las categorías y la búsqueda. Muestra fotografías circulares del catálogo, prioriza prendas disponibles y conserva mujer antes de hombre. Se desplaza horizontalmente, con bordes rosados y estado seleccionado accesible, sin nuevas lecturas de Firebase. Ya no queda fijo sobre el contenido.
+
+La pieza de pagos local incluye Addi, Sistecrédito y tarjetas, sin Mercado Pago. Reemplaza la imagen predeterminada anterior incluso en configuraciones guardadas; se conservan otras imágenes personalizadas.
