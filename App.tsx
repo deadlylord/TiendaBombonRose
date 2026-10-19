@@ -953,10 +953,10 @@ const App: React.FC = () => {
                   <section key={`collection:${activeCollectionId}`} className="mx-auto max-w-7xl px-4 py-7 sm:px-6 sm:py-10">
                     <button type="button" onClick={() => { setActiveCollectionId(null); setSelectedCategory('All'); navigate('/'); window.scrollTo({ top: 0, behavior: 'instant' }); }} className="mb-5 flex items-center gap-2 text-sm text-pink-800"><ArrowLeftIcon className="h-4 w-4" />Volver a la tienda</button>
                     {activeCollection ? <>
-                      <div className="mb-7 grid items-center gap-6 rounded-2xl bg-pink-50 p-5 sm:p-8 md:grid-cols-[1fr_auto]">
-                        <div><p className="text-xs font-semibold uppercase tracking-wider text-pink-700">Colección</p><h1 className="mt-2 font-serif text-3xl text-[#880E4F] sm:text-4xl">{activeCollection.name}</h1>{activeCollection.description && <p className="mt-3 max-w-2xl whitespace-pre-line text-sm leading-relaxed text-gray-600">{activeCollection.description}</p>}<p className="mt-3 text-xs text-gray-500">{collectionItems.length} prendas disponibles</p></div>
-                        {activeCollection.imageUrl && <ProductImage src={activeCollection.imageUrl} alt={activeCollection.name} className="max-h-64 w-full rounded-xl object-contain md:w-64" eager />}
-                      </div>
+                      <header className="mb-8 overflow-hidden rounded-2xl border border-pink-100 bg-[#fff8fb] sm:mb-10 sm:rounded-3xl">
+                        {activeCollection.imageUrl && <ProductImage src={activeCollection.imageUrl} alt={activeCollection.name} className="block h-auto max-h-[78svh] w-full object-contain" eager />}
+                        <div className="px-5 py-7 text-center sm:px-10 sm:py-10"><p className="text-xs font-semibold uppercase tracking-[0.2em] text-pink-700">Colección</p><h1 className="mt-3 break-words font-serif text-4xl text-[#880E4F] sm:text-5xl lg:text-6xl">{activeCollection.name}</h1>{activeCollection.description && <p className="mx-auto mt-4 max-w-2xl whitespace-pre-line text-sm leading-relaxed text-gray-600 sm:text-base">{activeCollection.description}</p>}<p className="mt-4 text-xs text-gray-500 sm:text-sm">{collectionItems.length} prendas disponibles</p></div>
+                      </header>
                       {collectionItems.length === 0 && !isCatalogLoading ? <p className="py-12 text-center text-sm text-gray-500">Por ahora no hay prendas disponibles en esta colección.</p> : <ProductGrid loading={isCatalogLoading && collectionItems.length === 0} products={collectionItems} resultKey={`collection:${activeCollection.id}`} onOpenDetails={handleOpenProductDetails} onQuickAdd={handleQuickAddToCart} editMode={editMode} userRole={userData?.role} onOpenEdit={handleOpenProductEdit} formatCurrency={formatCurrency} />}
                     </> : <div className="py-12 text-center"><h1 className="font-serif text-2xl">Esta colección no está disponible</h1><p className="mt-3 text-sm text-gray-500">Puedes seguir viendo las prendas del catálogo.</p></div>}
                   </section>
@@ -1043,11 +1043,11 @@ const App: React.FC = () => {
 
                     {collections.length > 0 && <section id="colecciones" className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
                       <h2 className="mb-5 font-serif text-2xl text-[#880E4F]">Nuestras colecciones</h2>
-                      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">{collections.map(collection => {
+                      <div className={`grid grid-cols-1 gap-6 ${collections.length > 1 ? 'md:grid-cols-2' : ''}`}>{collections.map(collection => {
                         const items = collectionProducts(collection, products, companyId);
                         return <a key={collection.id} href={collectionPath(collection.id)} onClick={event => { if (event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) { event.preventDefault(); openCollection(collection.id); } }} className="overflow-hidden rounded-2xl border border-pink-100 bg-white">
-                          {(collection.imageUrl || items[0]?.imageUrl) && <ProductImage src={collection.imageUrl || items[0]?.imageUrl} alt={collection.name} className="aspect-[4/3] w-full object-cover" />}
-                          <div className="p-4"><h3 className="font-semibold text-pink-900">{collection.name}</h3><p className="mt-1 text-xs text-gray-500">{items.length} prendas disponibles</p><span className="mt-3 inline-block text-xs font-semibold text-pink-700">Ver colección →</span></div>
+                          {(collection.imageUrl || items[0]?.imageUrl) && <ProductImage src={collection.imageUrl || items[0]?.imageUrl} alt={collection.name} className="block h-auto max-h-[65svh] w-full bg-[#fff8fb] object-contain" />}
+                          <div className="p-5 text-center sm:p-7"><h3 className="font-serif text-2xl text-pink-900 sm:text-3xl">{collection.name}</h3><p className="mt-1 text-xs text-gray-500">{items.length} prendas disponibles</p><span className="mt-3 inline-block text-xs font-semibold text-pink-700">Ver colección →</span></div>
                         </a>;
                       })}</div>
                     </section>}

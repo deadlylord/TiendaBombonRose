@@ -125,3 +125,8 @@ Solo las colecciones publicadas aparecen en el inicio y en su enlace `/collectio
 Admin → Banners → Al tocar este banner, abrir → Una colección conecta tanto la foto como el botón central a una campaña. Primero guarda y publica la colección; después selecciónala en el banner y guarda los banners. El texto central sigue siendo editable. No se aplican descuentos adicionales automáticamente al crear una colección.
 
 Validación: 48 pruebas (incluyen aislamiento por empresa, borradores, IDs únicos de prendas, disponibilidad, enlaces y regreso desde una ficha), TypeScript, compilación y diff check. La revisión visual y el despliegue en Netlify no están confirmados.
+
+
+## Portadas de colección destacadas (0.5.1)
+
+La página de colección coloca la portada grande arriba, con la imagen completa y el título/descripción centrados debajo. Se elimina la columna de 256 px que empequeñecía la portada. Las tarjetas del inicio ocupan todo el ancho en celular y una sola colección ocupa también todo el ancho disponible en escritorio. Las imágenes conservan su proporción sin recortes.
