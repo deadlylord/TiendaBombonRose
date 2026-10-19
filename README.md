@@ -130,3 +130,8 @@ Validación: 48 pruebas (incluyen aislamiento por empresa, borradores, IDs únic
 ## Portadas de colección destacadas (0.5.1)
 
 La página de colección coloca la portada grande arriba, con la imagen completa y el título/descripción centrados debajo. Se elimina la columna de 256 px que empequeñecía la portada. Las tarjetas del inicio ocupan todo el ancho en celular y una sola colección ocupa también todo el ancho disponible en escritorio. Las imágenes conservan su proporción sin recortes.
+
+
+## Círculo de colecciones (0.5.2)
+
+El selector muestra Todo → Colecciones → categorías. El círculo de Colecciones usa la primera portada publicada (o una prenda de ella) y un icono rosado si no hay imagen. Abre `/collections`, donde se reúnen las campañas publicadas. Se retiran las tarjetas grandes del inicio para que el acceso principal esté en el círculo. Las páginas individuales y los destinos de banners se conservan.
