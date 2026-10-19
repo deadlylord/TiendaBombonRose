@@ -135,3 +135,8 @@ La página de colección coloca la portada grande arriba, con la imagen completa
 ## Círculo de colecciones (0.5.2)
 
 El selector muestra Todo → Colecciones → categorías. El círculo de Colecciones usa la primera portada publicada (o una prenda de ella) y un icono rosado si no hay imagen. Abre `/collections`, donde se reúnen las campañas publicadas. Se retiran las tarjetas grandes del inicio para que el acceso principal esté en el círculo. Las páginas individuales y los destinos de banners se conservan.
+
+
+## Disposición original con círculo adicional (0.5.3)
+
+Se restaura la disposición de la versión 0.5.1 y se conserva únicamente el círculo adicional Colecciones después de Todo, con las categorías y sus imágenes existentes. El círculo lleva al apartado de colecciones publicado en el inicio. Las tarjetas grandes mantienen su ubicación y la portada interior conserva su diseño. Se retira la página de listado independiente introducida en 0.5.2.

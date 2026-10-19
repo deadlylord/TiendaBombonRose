@@ -183,6 +183,7 @@ const App: React.FC = () => {
     const products = !isCatalogLoading ? builtProducts : lastCompleteCatalog.current?.companyId === companyId ? lastCompleteCatalog.current.products : [];
 
     const collections = useMemo(() => publishedCollections(config, companyId), [config, companyId]);
+    const pendingCollectionsScroll = useRef(false);
     const [activeCollectionId, setActiveCollectionId] = useState<string | null>(() => collectionIdFromPath(window.location.pathname));
     const activeCollection = collections.find(collection => collection.id === activeCollectionId);
     const collectionItems = useMemo(() => activeCollection ? collectionProducts(activeCollection, products, companyId) : [], [activeCollection, products, companyId]);
@@ -243,7 +244,6 @@ const App: React.FC = () => {
 
     // --- ROUTING LOGIC ---
     const [currentPath, setCurrentPath] = useState(window.location.pathname);
-    const isCollectionsListing = currentPath === '/collections';
 
     const navigation = useRef<ReturnType<typeof createStoreNavigation> | null>(null);
     useEffect(() => {
@@ -255,7 +255,7 @@ const App: React.FC = () => {
         const route = currentPath;
         const collectionId = collectionIdFromPath(route);
         if (collectionId) { setActiveCollectionId(collectionId); setIsSearching(false); }
-        else if (route === '/' || route === '/search' || route === '/collections') setActiveCollectionId(null);
+        else if (route === '/' || route === '/search') setActiveCollectionId(null);
 
         const productMatch = route.match(/^\/product\/([^/]+)/);
         const isAdminRoute = route === '/admin';
@@ -269,7 +269,7 @@ const App: React.FC = () => {
             setAddUserModalOpen(false);
         }
 
-        if (route === '/' || route === '/collections') setIsSearching(false);
+        if (route === '/') setIsSearching(false);
 
         // Handle Product Detail Modal
         if (productMatch) {
@@ -298,8 +298,12 @@ const App: React.FC = () => {
     const navigate = (path: string) => navigation.current?.navigate(path);
     const closeModal = () => navigation.current?.close();
     const openCollections = () => {
-        setActiveCollectionId(null); setIsSearching(false); setIsMenTheme(false);
-        navigate('/collections'); window.scrollTo({ top: 0, behavior: 'instant' });
+        if (collections.length === 0) { showToast('Aún no hay colecciones publicadas.'); return; }
+        pendingCollectionsScroll.current = true;
+        setActiveCollectionId(null); setIsSearching(false); setSelectedCategory('All'); setIsMenTheme(false);
+        navigate('/');
+        const section = document.getElementById('colecciones');
+        if (section) { pendingCollectionsScroll.current = false; section.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
     };
     const openCollection = (id: string) => {
         setActiveCollectionId(id); setIsSearching(false); setIsMenTheme(false);
@@ -565,7 +569,7 @@ const App: React.FC = () => {
 
     const handleNavigateToCategory = (e: React.MouseEvent<HTMLAnchorElement>, category: Category | 'All') => {
         e.preventDefault();
-        if (activeCollectionId || isCollectionsListing) { setActiveCollectionId(null); navigate('/'); }
+        if (activeCollectionId) { setActiveCollectionId(null); navigate('/'); }
         setSelectedCategory(category);
         setMobileMenuOpen(false);
 
@@ -580,7 +584,7 @@ const App: React.FC = () => {
     };
 
     const handleCategoryButtonClick = (category: Category | 'All') => {
-      if (activeCollectionId || isCollectionsListing) { setActiveCollectionId(null); navigate('/'); }
+      if (activeCollectionId) { setActiveCollectionId(null); navigate('/'); }
       setSelectedCategory(category);
 
       // Update theme based on category
@@ -948,29 +952,17 @@ const App: React.FC = () => {
             {catalogError && <div role="alert" className="mx-auto max-w-3xl my-6 p-4 bg-rose-50 text-rose-900 rounded-lg text-center">{catalogError}</div>}
 
             <main>
-              {!activeCollectionId && (isCollectionsListing || isSearching || selectedCategory !== 'All') && <CategoryNav
-                categories={categories} products={products} selectedCategory={isCollectionsListing ? '__collections' : selectedCategory}
-                onOpenCollections={openCollections}
-                collectionsImage={collections[0]?.imageUrl || (collections[0] && collectionProducts(collections[0], products, companyId)[0]?.imageUrl)}
+              {!activeCollectionId && (isSearching || selectedCategory !== 'All') && <CategoryNav
+                categories={categories} products={products} selectedCategory={selectedCategory}
+                        onOpenCollections={openCollections}
+                        collectionsImage={collections[0]?.imageUrl || (collections[0] && collectionProducts(collections[0], products, companyId)[0]?.imageUrl)}
                 images={config.categoryImagesByCompany?.[companyId]}
                 onSelectCategory={handleCategoryButtonClick}
               />}
               <AnimatePresence initial={false} mode="wait">
-                {isCollectionsListing ? (
-                  <section key="collections" id="colecciones" className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
-                      <h2 className="mb-5 font-serif text-2xl text-[#880E4F]">Nuestras colecciones</h2>
-                      <div className={`grid grid-cols-1 gap-6 ${collections.length > 1 ? 'md:grid-cols-2' : ''}`}>{collections.map(collection => {
-                        const items = collectionProducts(collection, products, companyId);
-                        return <a key={collection.id} href={collectionPath(collection.id)} onClick={event => { if (event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) { event.preventDefault(); openCollection(collection.id); } }} className="overflow-hidden rounded-2xl border border-pink-100 bg-white">
-                          {(collection.imageUrl || items[0]?.imageUrl) && <ProductImage src={collection.imageUrl || items[0]?.imageUrl} alt={collection.name} className="block h-auto max-h-[65svh] w-full bg-[#fff8fb] object-contain" />}
-                          <div className="p-5 text-center sm:p-7"><h3 className="font-serif text-2xl text-pink-900 sm:text-3xl">{collection.name}</h3><p className="mt-1 text-xs text-gray-500">{items.length} prendas disponibles</p><span className="mt-3 inline-block text-xs font-semibold text-pink-700">Ver colección →</span></div>
-                        </a>;
-                      })}</div>
-                      {collections.length === 0 && <p className="py-12 text-center text-sm text-gray-500">Pronto encontrarás nuevas colecciones aquí.</p>}
-                    </section>
-                ) : activeCollectionId ? (
+                {activeCollectionId ? (
                   <section key={`collection:${activeCollectionId}`} className="mx-auto max-w-7xl px-4 py-7 sm:px-6 sm:py-10">
-                    <button type="button" onClick={openCollections} className="mb-5 flex items-center gap-2 text-sm text-pink-800"><ArrowLeftIcon className="h-4 w-4" />Ver todas las colecciones</button>
+                    <button type="button" onClick={() => { setActiveCollectionId(null); setSelectedCategory('All'); navigate('/'); window.scrollTo({ top: 0, behavior: 'instant' }); }} className="mb-5 flex items-center gap-2 text-sm text-pink-800"><ArrowLeftIcon className="h-4 w-4" />Volver a la tienda</button>
                     {activeCollection ? <>
                       <header className="mb-8 overflow-hidden rounded-2xl border border-pink-100 bg-[#fff8fb] sm:mb-10 sm:rounded-3xl">
                         {activeCollection.imageUrl && <ProductImage src={activeCollection.imageUrl} alt={activeCollection.name} className="block h-auto max-h-[78svh] w-full object-contain" eager />}
@@ -1060,8 +1052,19 @@ const App: React.FC = () => {
                         isMenTheme={isMenTheme}
                     />
 
+                    {collections.length > 0 && <section ref={section => { if (section && pendingCollectionsScroll.current) { pendingCollectionsScroll.current = false; section.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }} id="colecciones" className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
+                      <h2 className="mb-5 font-serif text-2xl text-[#880E4F]">Nuestras colecciones</h2>
+                      <div className={`grid grid-cols-1 gap-6 ${collections.length > 1 ? 'md:grid-cols-2' : ''}`}>{collections.map(collection => {
+                        const items = collectionProducts(collection, products, companyId);
+                        return <a key={collection.id} href={collectionPath(collection.id)} onClick={event => { if (event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) { event.preventDefault(); openCollection(collection.id); } }} className="overflow-hidden rounded-2xl border border-pink-100 bg-white">
+                          {(collection.imageUrl || items[0]?.imageUrl) && <ProductImage src={collection.imageUrl || items[0]?.imageUrl} alt={collection.name} className="block h-auto max-h-[65svh] w-full bg-[#fff8fb] object-contain" />}
+                          <div className="p-5 text-center sm:p-7"><h3 className="font-serif text-2xl text-pink-900 sm:text-3xl">{collection.name}</h3><p className="mt-1 text-xs text-gray-500">{items.length} prendas disponibles</p><span className="mt-3 inline-block text-xs font-semibold text-pink-700">Ver colección →</span></div>
+                        </a>;
+                      })}</div>
+                    </section>}
+
                     {isCatalogLoading && products.length === 0 ? <div role="status" className="mx-auto flex h-64 max-w-7xl items-center justify-center p-8 text-center text-sm text-gray-500">Cargando las prendas…</div> : <CategoryNav
-                        categories={categories} products={products} selectedCategory={isCollectionsListing ? '__collections' : selectedCategory}
+                        categories={categories} products={products} selectedCategory={selectedCategory}
                         onOpenCollections={openCollections}
                         collectionsImage={collections[0]?.imageUrl || (collections[0] && collectionProducts(collections[0], products, companyId)[0]?.imageUrl)}
                         images={config.categoryImagesByCompany?.[companyId]}
