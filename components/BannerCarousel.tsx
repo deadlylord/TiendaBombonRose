@@ -4,12 +4,13 @@ import { ChevronLeftIcon, ChevronRightIcon } from './Icons';
 import { bannerDestination } from '../services/bannerDestinations';
 import { loadBannerImage } from '../services/bannerImages';
 
-export default function BannerCarousel({ banners, loading = false, onNavigateToCategory, onNavigateToProduct, onViewCatalog, onInitialReady }: {
+export default function BannerCarousel({ banners, loading = false, onNavigateToCategory, onNavigateToProduct, onViewCatalog, onNavigateToCollection, onInitialReady }: {
   banners: Banner[];
   loading?: boolean;
   onNavigateToCategory: (category: Category) => void;
   onNavigateToProduct: (id: string) => void;
   onViewCatalog: () => void;
+  onNavigateToCollection: (id: string) => void;
   onInitialReady?: () => void;
   isMenTheme?: boolean;
 }) {
@@ -56,6 +57,7 @@ export default function BannerCarousel({ banners, loading = false, onNavigateToC
   const handleDestinationClick = (event: MouseEvent<HTMLAnchorElement>) => {
         if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
         if (destination.kind === 'category') { event.preventDefault(); onNavigateToCategory(destination.category); }
+        else if (destination.kind === 'collection') { event.preventDefault(); onNavigateToCollection(destination.collectionId); }
         else if (destination.kind === 'product') { event.preventDefault(); onNavigateToProduct(destination.productId); }
         else if (destination.kind === 'catalog') { event.preventDefault(); onViewCatalog(); }
 

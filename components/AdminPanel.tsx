@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import type { Product, Category, Banner, StoreConfig, Order, ProductVariantDetail, ProductColorVariantDetail, ProductVariants, User, StoreBranch } from '../types';
+import type { Product, Category, Banner, StoreConfig, Order, ProductVariantDetail, ProductColorVariantDetail, ProductVariants, User, StoreBranch, StoreCollection } from '../types';
 import { CloseIcon, MenuIcon, SearchIcon, TrashIcon, PlusIcon, UploadIcon, ArrowLeftIcon } from './Icons';
 import { db } from '../services/firebase';
 import { doc, collection, addDoc, updateDoc, deleteDoc } from 'firebase/firestore';
@@ -7,6 +7,8 @@ import { generateProductDescription } from '../services/productTools';
 import { uploadImageToStorage } from '../services/imageUploads';
 import AdminInput from './AdminInput';
 import BannerDestinationPicker from './BannerDestinationPicker';
+import AdminCollections from './AdminCollections';
+import { companyCollections } from '../services/storeCollections';
 import { bannerDestination } from '../services/bannerDestinations';
 import { catalogCompany, DEFAULT_COMPANY_ID } from '../services/catalog';
 
@@ -105,7 +107,7 @@ const AdminPanel: React.FC<AdminPanelProps> = (props) => {
     const isAdmin = user.role === 'admin';
     const canManageProducts = user.role === 'admin' || user.role === 'vendedor';
 
-    const allTabs = ['Productos', 'Pedidos', 'Sedes', 'Usuarios', 'Categorías', 'Banners', 'General'];
+    const allTabs = ['Productos', 'Pedidos', 'Sedes', 'Usuarios', 'Categorías', 'Colecciones', 'Banners', 'General'];
     const availableTabs = isAdmin ? allTabs : ['Productos', 'Pedidos', 'Sedes'];
 
     const [activeTab, setActiveTab] = useState('Productos');
@@ -191,12 +193,19 @@ const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                             images={props.store.config.categoryImagesByCompany?.[catalogCompany(props.store.config)]}
                             onSaveImages={async images => { await onUpdateConfig({ ...props.store.config, categoryImagesByCompany: { ...props.store.config.categoryImagesByCompany, [catalogCompany(props.store.config)]: images } }); }}
                         /> : null;
+            case 'Colecciones':
+                return isAdmin ? <AdminCollections key={catalogCompany(props.store.config)}
+                    collections={companyCollections(props.store.config, catalogCompany(props.store.config))}
+                    products={props.store.products}
+                    onSave={async collections => { await onUpdateConfig({ ...props.store.config, collectionsByCompany: { ...props.store.config.collectionsByCompany, [catalogCompany(props.store.config)]: collections } }); }}
+                /> : null;
             case 'Banners':
                 return isAdmin ? <AdminBannersTab 
                             banners={props.store.banners}
                             menBanners={props.store.menBanners}
                             categories={props.store.categories}
                             products={props.store.products}
+                            collections={companyCollections(props.store.config, catalogCompany(props.store.config))}
                             onSaveBanners={onSaveBanners}
                             onSaveMenBanners={onSaveMenBanners}
                         /> : null;
@@ -646,9 +655,10 @@ const AdminBannersTab: React.FC<{
     menBanners: Banner[],
     categories: Category[],
     products: Product[],
+    collections: StoreCollection[],
     onSaveBanners: (b: Banner[]) => Promise<void> | void,
     onSaveMenBanners: (b: Banner[]) => Promise<void> | void
-}> = ({ banners, menBanners, categories, products, onSaveBanners, onSaveMenBanners }) => {
+}> = ({ banners, menBanners, categories, products, collections, onSaveBanners, onSaveMenBanners }) => {
     const [uploadCount, setUploadCount] = useState(0);
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState('');
@@ -716,7 +726,7 @@ const AdminBannersTab: React.FC<{
                             <div className="md:col-span-2 space-y-4">
                                 <AdminInput label="Nombre del banner (solo administración)" value={banner.title} onChange={e => updateBanner(banner.id, 'title', e.target.value, false)} />
                                 <AdminInput label="Texto del botón central" value={banner.buttonText || ''} maxLength={60} onChange={e => updateBanner(banner.id, 'buttonText', e.target.value, false)} placeholder="Ver colección" />
-                                <BannerDestinationPicker link={banner.link} categories={categories} products={products} onChange={link => updateBanner(banner.id, 'link', link, false)} />
+                                <BannerDestinationPicker collections={collections} link={banner.link} categories={categories} products={products} onChange={link => updateBanner(banner.id, 'link', link, false)} />
                             </div>
                             <button onClick={() => removeBanner(banner.id, false)} className="absolute top-2 right-2 text-red-500 hover:text-red-700"><TrashIcon className="w-5 h-5"/></button>
                         </div>
@@ -740,7 +750,7 @@ const AdminBannersTab: React.FC<{
                             <div className="md:col-span-2 space-y-4">
                                 <AdminInput label="Nombre del banner (solo administración)" value={banner.title} onChange={e => updateBanner(banner.id, 'title', e.target.value, true)} />
                                 <AdminInput label="Texto del botón central" value={banner.buttonText || ''} maxLength={60} onChange={e => updateBanner(banner.id, 'buttonText', e.target.value, true)} placeholder="Ver colección" />
-                                <BannerDestinationPicker link={banner.link} categories={categories} products={products} onChange={link => updateBanner(banner.id, 'link', link, true)} />
+                                <BannerDestinationPicker collections={collections} link={banner.link} categories={categories} products={products} onChange={link => updateBanner(banner.id, 'link', link, true)} />
                             </div>
                             <button onClick={() => removeBanner(banner.id, true)} className="absolute top-2 right-2 text-red-500 hover:text-red-700"><TrashIcon className="w-5 h-5"/></button>
                         </div>

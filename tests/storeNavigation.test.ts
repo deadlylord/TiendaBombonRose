@@ -56,6 +56,17 @@ test('Closing a product returns to search and its exact scroll without creating 
   assert.equal(entries.length, 2);
   assert.deepEqual(paths, ['/product/p1', '/search']);
 });
+
+test('Closing a collection product returns to that collection and restores its scroll', () => {
+  const { browser, flushFrames } = fakeBrowser('/collection/halloween', 960);
+  const navigation = createStoreNavigation(browser, () => {});
+  navigation.navigate('/product/p1');
+  browser.scrollTo({ top: 0 });
+  navigation.close();
+  flushFrames();
+  assert.equal(browser.location.pathname, '/collection/halloween');
+  assert.equal(browser.scrollY, 960);
+});
 test('Native Back uses the same restoration when a product was opened from a category', () => {
   const { browser, flushFrames } = fakeBrowser('/', 925);
   let currentPath = '/';

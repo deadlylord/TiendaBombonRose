@@ -1,6 +1,7 @@
 export type BannerDestination =
   | { kind: 'catalog'; href: string }
   | { kind: 'category'; category: string; href: string }
+  | { kind: 'collection'; collectionId: string; href: string }
   | { kind: 'product'; productId: string; href: string }
   | { kind: 'external'; href: string }
   | { kind: 'none'; href: string };
@@ -9,6 +10,11 @@ export function bannerDestination(link: string): BannerDestination {
   const value = link?.trim() || '';
   if (value === '#productos' || value === '/search') return { kind: 'catalog', href: '/search' };
   if (value.startsWith('category:') && value.slice(9).trim()) return { kind: 'category', category: value.slice(9), href: '#productos' };
+  const collection = value.match(/^\/collection\/([^/?#]+)$/)?.[1];
+  if (collection) {
+    try { const id = decodeURIComponent(collection); return { kind: 'collection', collectionId: id, href: `/collection/${encodeURIComponent(id)}` }; }
+    catch { return { kind: 'none', href: '' }; }
+  }
   const product = value.startsWith('product:') ? value.slice(8) : value.match(/^\/product\/([^/?#]+)$/)?.[1];
   if (product) {
     let id = product;

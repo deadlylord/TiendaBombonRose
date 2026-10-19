@@ -1,16 +1,16 @@
 import { useState } from 'react';
-import type { Product } from '../types';
+import type { Product, StoreCollection } from '../types';
 import { bannerDestination } from '../services/bannerDestinations';
 import { normalizeSearch } from '../services/catalogSearch';
 import ProductImage from './ProductImage';
 
-export default function BannerDestinationPicker({ link, categories, products, onChange }: {
-  link: string; categories: string[]; products: Product[]; onChange: (link: string) => void;
+export default function BannerDestinationPicker({ link, categories, products, collections, onChange }: {
+  link: string; categories: string[]; products: Product[]; collections: StoreCollection[]; onChange: (link: string) => void;
 }) {
   const destination = bannerDestination(link);
   const [chosenType, setChosenType] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const type = chosenType || (destination.kind === 'none' ? (link.startsWith('category:') ? 'category' : link.startsWith('/product/') ? 'product' : 'external') : destination.kind);
+  const type = chosenType || (destination.kind === 'none' ? (link.startsWith('category:') ? 'category' : link.startsWith('/product/') ? 'product' : link.startsWith('/collection/') ? 'collection' : 'external') : destination.kind);
   const selectedProduct = destination.kind === 'product' ? products.find(product => product.id === destination.productId) : undefined;
   const matches = products.filter(product => normalizeSearch(`${product.name} ${product.category}`).includes(normalizeSearch(search))).slice(0, 80);
   if (selectedProduct && !matches.some(product => product.id === selectedProduct.id)) matches.unshift(selectedProduct);
@@ -19,9 +19,9 @@ export default function BannerDestinationPicker({ link, categories, products, on
     <label className="block text-sm font-medium">Al tocar este banner, abrir
       <select value={type} className={selectClasses} onChange={event => {
         const type = event.target.value; setChosenType(type); setSearch('');
-        onChange(type === 'catalog' ? '#productos' : type === 'category' ? 'category:' : type === 'product' ? '/product/' : '');
+        onChange(type === 'catalog' ? '#productos' : type === 'category' ? 'category:' : type === 'product' ? '/product/' : type === 'collection' ? '/collection/' : '');
       }}>
-        <option value="catalog">Todo el catálogo</option><option value="category">Una categoría</option><option value="product">Una prenda</option><option value="external">Un enlace web</option>
+        <option value="catalog">Todo el catálogo</option><option value="category">Una categoría</option><option value="product">Una prenda</option><option value="collection">Una colección</option><option value="external">Un enlace web</option>
       </select>
     </label>
     {type === 'category' && <label className="block text-sm">Categoría
@@ -30,6 +30,14 @@ export default function BannerDestinationPicker({ link, categories, products, on
         {destination.kind === 'category' && !categories.includes(destination.category) && <option value={destination.category}>{destination.category} (no disponible)</option>}
         {categories.map(category => <option key={category} value={category}>{category}</option>)}
       </select>
+    </label>}
+    {type === 'collection' && <label className="block text-sm">Colección
+      <select value={destination.kind === 'collection' ? destination.collectionId : ''} onChange={event => onChange(event.target.value ? `/collection/${encodeURIComponent(event.target.value)}` : '/collection/')} className={selectClasses}>
+        <option value="">Selecciona una colección</option>
+        {destination.kind === 'collection' && !collections.some(collection => collection.id === destination.collectionId) && <option value={destination.collectionId}>Colección no disponible: elige otra</option>}
+        {collections.map(collection => <option key={collection.id} value={collection.id}>{collection.name}{collection.published ? '' : ' (borrador: publícala para que se vea)'}</option>)}
+      </select>
+      {collections.length === 0 && <span className="mt-2 block text-xs text-gray-500">Primero crea y guarda la colección en Admin → Colecciones.</span>}
     </label>}
     {type === 'product' && <>
       <label className="block text-sm">Buscar prenda<input value={search} onChange={event => setSearch(event.target.value)} placeholder="Escribe el nombre…" className={selectClasses} /></label>

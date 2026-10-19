@@ -38,6 +38,15 @@ export interface Product {
 
 export type Category = string;
 
+export interface StoreCollection {
+  id: string;
+  name: string;
+  description: string;
+  imageUrl: string;
+  productIds: string[];
+  published: boolean;
+}
+
 export interface Banner {
   buttonText?: string;
   id: number;
@@ -60,6 +69,7 @@ export interface SocialLinks {
 }
 
 export interface StoreConfig {
+  collectionsByCompany?: Record<string, StoreCollection[]>;
   categoryImagesByCompany?: Record<string, Record<string, string>>;
   inventoryCompanyId?: string;
   logoUrl: string;

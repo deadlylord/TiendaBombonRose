@@ -114,3 +114,14 @@ El banner muestra únicamente la imagen y un botón central translúcido, con bo
 El círculo rosa original permanece en un nodo HTML independiente de la raíz de React. Ya no se recrea al descargar App ni al recibir la configuración. La tienda se monta detrás y el cargador se retira una sola vez después de confirmar el primer banner (o su error/ausencia) y esperar dos cuadros de renderizado. Una imagen externa lenta no bloquea el acceso más de seis segundos desde que llega la lista de banners. Las rutas directas también retiran el cargador; las fichas esperan al catálogo.
 
 La tipografía de la carga es Arial estable, sin cambio al descargar Poppins, y el contenedor/círculo no tienen borde, fondo rectangular, sombra ni contorno. El círculo, el mensaje y el botón de reintento conservan su diseño. Se verifican la coincidencia de HTML/React y el retiro único diferido del nodo inicial; no se ha verificado visualmente en el teléfono.
+
+
+## Colecciones de campañas (0.5.0)
+
+Admin → Colecciones permite crear selecciones como Halloween con nombre, descripción, portada opcional y prendas elegidas por ID mediante búsqueda y casillas. Una prenda puede pertenecer a varias colecciones y conserva su categoría, precio e inventario. Las colecciones se guardan por empresa en `store/config.collectionsByCompany`, usando la suscripción de configuración existente y confirmación del guardado. No se añaden consultas de inventario.
+
+Solo las colecciones publicadas aparecen en el inicio y en su enlace `/collection/<id>`. Las ocultas y las de otra empresa no se muestran. Los artículos agotados o ausentes se conservan en la selección del administrador y no se muestran públicamente hasta regresar al catálogo. La ruta permite compartir campañas y abrir productos con regreso a la misma colección y posición.
+
+Admin → Banners → Al tocar este banner, abrir → Una colección conecta tanto la foto como el botón central a una campaña. Primero guarda y publica la colección; después selecciónala en el banner y guarda los banners. El texto central sigue siendo editable. No se aplican descuentos adicionales automáticamente al crear una colección.
+
+Validación: 48 pruebas (incluyen aislamiento por empresa, borradores, IDs únicos de prendas, disponibilidad, enlaces y regreso desde una ficha), TypeScript, compilación y diff check. La revisión visual y el despliegue en Netlify no están confirmados.

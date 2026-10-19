@@ -21,6 +21,7 @@ import {
 import { revealStorefront } from './services/startupScreen';
 import BannerCarousel from './components/BannerCarousel';
 import ProductDetails from './components/ProductDetails';
+import { publishedCollections, collectionProducts, collectionPath, collectionIdFromPath } from './services/storeCollections';
 import StoreLogo from './components/StoreLogo';
 import CategoryNav from './components/CategoryNav';
 import CatalogControls from './components/CatalogControls';
@@ -181,6 +182,11 @@ const App: React.FC = () => {
     if (!isCatalogLoading) lastCompleteCatalog.current = { companyId, products: builtProducts };
     const products = !isCatalogLoading ? builtProducts : lastCompleteCatalog.current?.companyId === companyId ? lastCompleteCatalog.current.products : [];
 
+    const collections = useMemo(() => publishedCollections(config, companyId), [config, companyId]);
+    const [activeCollectionId, setActiveCollectionId] = useState<string | null>(() => collectionIdFromPath(window.location.pathname));
+    const activeCollection = collections.find(collection => collection.id === activeCollectionId);
+    const collectionItems = useMemo(() => activeCollection ? collectionProducts(activeCollection, products, companyId) : [], [activeCollection, products, companyId]);
+
     // Only show populated categories; local aliases must not add empty categories.
     const categories = useMemo(() => orderCategories(products.map(product => product.category)), [products]);
     // UI State
@@ -214,6 +220,7 @@ const App: React.FC = () => {
         if (previousCompany.current !== companyId) {
             previousCompany.current = companyId;
             setSelectedProduct(null);
+            setActiveCollectionId(null);
             setProductToEdit(null);
             setInvoiceModalOpen(false);
             setSelectedCategory('All');
@@ -245,6 +252,9 @@ const App: React.FC = () => {
 
     useEffect(() => {
         const route = currentPath;
+        const collectionId = collectionIdFromPath(route);
+        if (collectionId) { setActiveCollectionId(collectionId); setIsSearching(false); }
+        else if (route === '/' || route === '/search') setActiveCollectionId(null);
 
         const productMatch = route.match(/^\/product\/([^/]+)/);
         const isAdminRoute = route === '/admin';
@@ -286,6 +296,10 @@ const App: React.FC = () => {
 
     const navigate = (path: string) => navigation.current?.navigate(path);
     const closeModal = () => navigation.current?.close();
+    const openCollection = (id: string) => {
+        setActiveCollectionId(id); setIsSearching(false); setIsMenTheme(false);
+        navigate(collectionPath(id)); window.scrollTo({ top: 0, behavior: 'instant' });
+    };
 
     const handleOpenProductDetails = (product: Product) => {
         navigate(`/product/${encodeURIComponent(product.id)}`);
@@ -546,6 +560,7 @@ const App: React.FC = () => {
 
     const handleNavigateToCategory = (e: React.MouseEvent<HTMLAnchorElement>, category: Category | 'All') => {
         e.preventDefault();
+        if (activeCollectionId) { setActiveCollectionId(null); navigate('/'); }
         setSelectedCategory(category);
         setMobileMenuOpen(false);
 
@@ -560,6 +575,7 @@ const App: React.FC = () => {
     };
 
     const handleCategoryButtonClick = (category: Category | 'All') => {
+      if (activeCollectionId) { setActiveCollectionId(null); navigate('/'); }
       setSelectedCategory(category);
 
       // Update theme based on category
@@ -908,6 +924,7 @@ const App: React.FC = () => {
                 currentUser={currentUser}
                 onAdminClick={handleOpenAdmin}
                 onHomeClick={() => {
+                    setActiveCollectionId(null);
                     setSelectedCategory('All');
                     setSearchTerm('');
                     setSelectedSizeFilter('');
@@ -926,13 +943,24 @@ const App: React.FC = () => {
             {catalogError && <div role="alert" className="mx-auto max-w-3xl my-6 p-4 bg-rose-50 text-rose-900 rounded-lg text-center">{catalogError}</div>}
 
             <main>
-              {(isSearching || selectedCategory !== 'All') && <CategoryNav
+              {!activeCollectionId && (isSearching || selectedCategory !== 'All') && <CategoryNav
                 categories={categories} products={products} selectedCategory={selectedCategory}
                 images={config.categoryImagesByCompany?.[companyId]}
                 onSelectCategory={handleCategoryButtonClick}
               />}
               <AnimatePresence initial={false} mode="wait">
-                {isSearching ? (
+                {activeCollectionId ? (
+                  <section key={`collection:${activeCollectionId}`} className="mx-auto max-w-7xl px-4 py-7 sm:px-6 sm:py-10">
+                    <button type="button" onClick={() => { setActiveCollectionId(null); setSelectedCategory('All'); navigate('/'); window.scrollTo({ top: 0, behavior: 'instant' }); }} className="mb-5 flex items-center gap-2 text-sm text-pink-800"><ArrowLeftIcon className="h-4 w-4" />Volver a la tienda</button>
+                    {activeCollection ? <>
+                      <div className="mb-7 grid items-center gap-6 rounded-2xl bg-pink-50 p-5 sm:p-8 md:grid-cols-[1fr_auto]">
+                        <div><p className="text-xs font-semibold uppercase tracking-wider text-pink-700">Colección</p><h1 className="mt-2 font-serif text-3xl text-[#880E4F] sm:text-4xl">{activeCollection.name}</h1>{activeCollection.description && <p className="mt-3 max-w-2xl whitespace-pre-line text-sm leading-relaxed text-gray-600">{activeCollection.description}</p>}<p className="mt-3 text-xs text-gray-500">{collectionItems.length} prendas disponibles</p></div>
+                        {activeCollection.imageUrl && <ProductImage src={activeCollection.imageUrl} alt={activeCollection.name} className="max-h-64 w-full rounded-xl object-contain md:w-64" eager />}
+                      </div>
+                      {collectionItems.length === 0 && !isCatalogLoading ? <p className="py-12 text-center text-sm text-gray-500">Por ahora no hay prendas disponibles en esta colección.</p> : <ProductGrid loading={isCatalogLoading && collectionItems.length === 0} products={collectionItems} resultKey={`collection:${activeCollection.id}`} onOpenDetails={handleOpenProductDetails} onQuickAdd={handleQuickAddToCart} editMode={editMode} userRole={userData?.role} onOpenEdit={handleOpenProductEdit} formatCurrency={formatCurrency} />}
+                    </> : <div className="py-12 text-center"><h1 className="font-serif text-2xl">Esta colección no está disponible</h1><p className="mt-3 text-sm text-gray-500">Puedes seguir viendo las prendas del catálogo.</p></div>}
+                  </section>
+                ) : isSearching ? (
                   <motion.section
                     key="search"
                     initial={{ opacity: 0 }}
@@ -1008,9 +1036,21 @@ const App: React.FC = () => {
                         loading={areBannersLoading}
                         onNavigateToCategory={category => handleCatalogFilters({ term: '', category, size: '', color: '', sort: 'recent' })}
                         onNavigateToProduct={id => navigate(`/product/${encodeURIComponent(id)}`)}
+                        onNavigateToCollection={openCollection}
                         onViewCatalog={() => handleCatalogFilters({ term: '', category: 'All', size: '', color: '', sort: 'recent' })}
                         isMenTheme={isMenTheme}
                     />
+
+                    {collections.length > 0 && <section id="colecciones" className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
+                      <h2 className="mb-5 font-serif text-2xl text-[#880E4F]">Nuestras colecciones</h2>
+                      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">{collections.map(collection => {
+                        const items = collectionProducts(collection, products, companyId);
+                        return <a key={collection.id} href={collectionPath(collection.id)} onClick={event => { if (event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) { event.preventDefault(); openCollection(collection.id); } }} className="overflow-hidden rounded-2xl border border-pink-100 bg-white">
+                          {(collection.imageUrl || items[0]?.imageUrl) && <ProductImage src={collection.imageUrl || items[0]?.imageUrl} alt={collection.name} className="aspect-[4/3] w-full object-cover" />}
+                          <div className="p-4"><h3 className="font-semibold text-pink-900">{collection.name}</h3><p className="mt-1 text-xs text-gray-500">{items.length} prendas disponibles</p><span className="mt-3 inline-block text-xs font-semibold text-pink-700">Ver colección →</span></div>
+                        </a>;
+                      })}</div>
+                    </section>}
 
                     {isCatalogLoading && products.length === 0 ? <div role="status" className="mx-auto flex h-64 max-w-7xl items-center justify-center p-8 text-center text-sm text-gray-500">Cargando las prendas…</div> : <CategoryNav
                         categories={categories} products={products} selectedCategory={selectedCategory}
