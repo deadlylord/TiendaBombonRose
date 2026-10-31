@@ -140,3 +140,8 @@ El selector muestra Todo → Colecciones → categorías. El círculo de Colecci
 ## Disposición original con círculo adicional (0.5.3)
 
 Se restaura la disposición de la versión 0.5.1 y se conserva únicamente el círculo adicional Colecciones después de Todo, con las categorías y sus imágenes existentes. El círculo lleva al apartado de colecciones publicado en el inicio. Las tarjetas grandes mantienen su ubicación y la portada interior conserva su diseño. Se retira la página de listado independiente introducida en 0.5.2.
+
+
+## Inicio sin sección de colecciones (0.5.4)
+
+Se retiran las tarjetas de colecciones debajo del banner. Los círculos existentes conservan su diseño y quedan inmediatamente después del banner; el círculo Colecciones abre el listado de campañas publicadas en `/collections`. Se mantienen las portadas grandes, las páginas individuales y los enlaces desde banners. No se eliminan colecciones ni se modifica el catálogo.
